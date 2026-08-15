@@ -5,7 +5,7 @@ function App() {
   const [status, setStatus] = useState('Checking...')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data, error }) => {
+    supabase.auth.getSession().then(({ error }) => {
       if (error) {
         setStatus('Connection Error: ' + error.message)
       } else {

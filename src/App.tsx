@@ -1,7 +1,8 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
+import { calculateFabric } from './lib/curtainCalculator'
 
-type Page = 'dashboard' | 'customers' | 'projects'
+type Page = 'dashboard' | 'customers' | 'projects' | 'calculator'
 type AuthMode = 'login' | 'register'
 
 function App() {
@@ -68,10 +69,10 @@ function App() {
               </button>
             </div>
           </div>
-          <nav className="flex gap-4 max-w-5xl mx-auto mt-3">
+          <nav className="flex gap-2 sm:gap-4 max-w-5xl mx-auto mt-3 overflow-x-auto">
             <button
               onClick={() => setActivePage('dashboard')}
-              className={`px-3 py-1 rounded ${
+              className={`px-3 py-1 rounded whitespace-nowrap ${
                 activePage === 'dashboard' ? 'bg-white text-blue-800' : 'text-white'
               }`}
             >
@@ -79,7 +80,7 @@ function App() {
             </button>
             <button
               onClick={() => setActivePage('customers')}
-              className={`px-3 py-1 rounded ${
+              className={`px-3 py-1 rounded whitespace-nowrap ${
                 activePage === 'customers' ? 'bg-white text-blue-800' : 'text-white'
               }`}
             >
@@ -87,18 +88,26 @@ function App() {
             </button>
             <button
               onClick={() => setActivePage('projects')}
-              className={`px-3 py-1 rounded ${
+              className={`px-3 py-1 rounded whitespace-nowrap ${
                 activePage === 'projects' ? 'bg-white text-blue-800' : 'text-white'
               }`}
             >
               Projek
+            </button>
+            <button
+              onClick={() => setActivePage('calculator')}
+              className={`px-3 py-1 rounded whitespace-nowrap ${
+                activePage === 'calculator' ? 'bg-white text-blue-800' : 'text-white'
+              }`}
+            >
+              Kalkulator Kain
             </button>
           </nav>
         </header>
 
         <main className="max-w-5xl mx-auto p-4">
           {activePage === 'dashboard' && (
-            <div className="bg-white p-6 rounded shadow">
+            <div className="bg-white p-4 sm:p-6 rounded shadow">
               <h2 className="text-2xl font-bold mb-2">Dashboard</h2>
               <p>Selamat datang ke HBCurtain ERP.</p>
               <p className="mt-2 text-gray-600">
@@ -109,6 +118,7 @@ function App() {
 
           {activePage === 'customers' && <CustomersPage />}
           {activePage === 'projects' && <ProjectsPage />}
+          {activePage === 'calculator' && <CalculatorPage />}
         </main>
       </div>
     )
@@ -126,14 +136,14 @@ function App() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <input
             type="password"
             placeholder="Kata Laluan"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
         </div>
 
@@ -279,16 +289,16 @@ function CustomersPage() {
   )
 
   return (
-    <div className="bg-white p-6 rounded shadow">
+    <div className="bg-white p-4 sm:p-6 rounded shadow">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-3">
         <h2 className="text-2xl font-bold">Senarai Pelanggan</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full md:w-auto">
           <input
             type="text"
             placeholder="Cari nama, telefon, alamat..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border rounded px-3 py-2 w-full md:w-64"
+            className="border rounded px-3 py-2 text-base w-full md:w-64"
           />
           <button
             onClick={() => {
@@ -311,33 +321,33 @@ function CustomersPage() {
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             required
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <input
             type="text"
             placeholder="Telefon"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <textarea
             placeholder="Alamat"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <input
             type="text"
             placeholder="Nama Syarikat"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <textarea
             placeholder="Nota"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <div className="flex gap-2">
             <button
@@ -446,7 +456,6 @@ function ProjectsPage() {
   const [measurementNotes, setMeasurementNotes] = useState('')
   const [editingMeasurementId, setEditingMeasurementId] = useState<string | null>(null)
 
-  // Data lists for sub-levels
   const [rooms, setRooms] = useState<any[]>([])
   const [windows, setWindows] = useState<any[]>([])
   const [measurements, setMeasurements] = useState<any[]>([])
@@ -758,7 +767,7 @@ function ProjectsPage() {
   }
 
   return (
-    <div className="bg-white p-6 rounded shadow space-y-4">
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Projek</h2>
         <button
@@ -781,13 +790,13 @@ function ProjectsPage() {
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
             required
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <select
             value={customerId}
             onChange={(e) => setCustomerId(e.target.value)}
             required
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           >
             <option value="">Pilih Pelanggan *</option>
             {customers.map((c) => (
@@ -799,12 +808,12 @@ function ProjectsPage() {
             placeholder="Alamat Tapak"
             value={siteAddress}
             onChange={(e) => setSiteAddress(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <select
             value={projectStatus}
             onChange={(e) => setProjectStatus(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           >
             <option value="active">Aktif</option>
             <option value="pending">Tertunda</option>
@@ -815,7 +824,7 @@ function ProjectsPage() {
             placeholder="Penerangan"
             value={projectDescription}
             onChange={(e) => setProjectDescription(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-base"
           />
           <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
             {editingProjectId ? 'Simpan Perubahan' : 'Simpan Projek'}
@@ -909,13 +918,13 @@ function ProjectsPage() {
                 value={roomName}
                 onChange={(e) => setRoomName(e.target.value)}
                 required
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-3 py-2 text-base"
               />
               <textarea
                 placeholder="Nota"
                 value={roomNotes}
                 onChange={(e) => setRoomNotes(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-3 py-2 text-base"
               />
               <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
                 {editingRoomId ? 'Simpan Perubahan' : 'Simpan Bilik'}
@@ -1001,20 +1010,20 @@ function ProjectsPage() {
                 value={windowName}
                 onChange={(e) => setWindowName(e.target.value)}
                 required
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-3 py-2 text-base"
               />
               <input
                 type="text"
                 placeholder="Jenis Tingkap (cth: Panel, Eyelet)"
                 value={windowType}
                 onChange={(e) => setWindowType(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-3 py-2 text-base"
               />
               <textarea
                 placeholder="Nota"
                 value={windowNotes}
                 onChange={(e) => setWindowNotes(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-3 py-2 text-base"
               />
               <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
                 {editingWindowId ? 'Simpan Perubahan' : 'Simpan Tingkap'}
@@ -1099,7 +1108,7 @@ function ProjectsPage() {
                   placeholder="Lebar (cm)"
                   value={widthCm}
                   onChange={(e) => setWidthCm(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-base"
                 />
                 <input
                   type="number"
@@ -1107,7 +1116,7 @@ function ProjectsPage() {
                   placeholder="Tinggi (cm)"
                   value={heightCm}
                   onChange={(e) => setHeightCm(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-base"
                 />
                 <input
                   type="number"
@@ -1115,7 +1124,7 @@ function ProjectsPage() {
                   placeholder="Drop (cm)"
                   value={dropCm}
                   onChange={(e) => setDropCm(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-base"
                 />
                 <input
                   type="number"
@@ -1123,7 +1132,7 @@ function ProjectsPage() {
                   placeholder="Fullness Ratio"
                   value={fullnessRatio}
                   onChange={(e) => setFullnessRatio(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-base"
                 />
                 <input
                   type="number"
@@ -1131,7 +1140,7 @@ function ProjectsPage() {
                   placeholder="Lebar Kain (cm)"
                   value={fabricWidthCm}
                   onChange={(e) => setFabricWidthCm(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-base"
                 />
                 <input
                   type="number"
@@ -1139,14 +1148,14 @@ function ProjectsPage() {
                   placeholder="Pattern Repeat (cm)"
                   value={patternRepeatCm}
                   onChange={(e) => setPatternRepeatCm(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-base"
                 />
               </div>
               <textarea
                 placeholder="Nota"
                 value={measurementNotes}
                 onChange={(e) => setMeasurementNotes(e.target.value)}
-                className="w-full border rounded px-3 py-2"
+                className="w-full border rounded px-3 py-2 text-base"
               />
               <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
                 {editingMeasurementId ? 'Simpan Perubahan' : 'Simpan Ukuran'}
@@ -1196,5 +1205,234 @@ function ProjectsPage() {
     </div>
   )
 }
+
+function CalculatorPage() {
+  const [width, setWidth] = useState('')
+  const [drop, setDrop] = useState('')
+  const [unit, setUnit] = useState('cm')
+  const [fullness, setFullness] = useState('2.0')
+  const [fabricWidth, setFabricWidth] = useState('137')
+  const [patternRepeat, setPatternRepeat] = useState('0')
+  const [hemAllowance, setHemAllowance] = useState('20')
+  const [sideAllowance, setSideAllowance] = useState('10')
+  const [pricePerMeter, setPricePerMeter] = useState('')
+  const [result, setResult] = useState<any>(null)
+  const [error, setError] = useState('')
+
+  function convertToCm(value: number, unit: string): number {
+    if (unit === 'feet') return value * 30.48
+    if (unit === 'inci') return value * 2.54
+    return value // cm
+  }
+
+  function handleCalculate(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+
+    const widthNumber = Number(width)
+    const dropNumber = Number(drop)
+
+    if (!widthNumber || !dropNumber || !fullness || !fabricWidth) {
+      setError('Lebar, drop, fullness, dan lebar kain wajib diisi.')
+      return
+    }
+
+    const widthCm = convertToCm(widthNumber, unit)
+    const dropCm = convertToCm(dropNumber, unit)
+
+    const input = {
+      widthCm,
+      dropCm,
+      fullness: Number(fullness),
+      fabricWidthCm: Number(fabricWidth),
+      patternRepeatCm: Number(patternRepeat),
+      hemAllowanceCm: Number(hemAllowance),
+      sideAllowanceCm: Number(sideAllowance),
+    }
+
+    const calc = calculateFabric(input)
+    setResult(calc)
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow">
+      <h2 className="text-2xl font-bold mb-1">Kalkulator Kain Langsir</h2>
+      <p className="text-gray-600 mb-4 text-sm">
+        Pilih unit ukuran, isi lebar dan drop, pilih fullness. Sistem akan kira jumlah kain.
+      </p>
+
+      <form onSubmit={handleCalculate} className="bg-gray-50 p-4 rounded border space-y-4">
+        {/* Pilihan unit */}
+        <div>
+          <label className="block font-medium mb-1">Unit Ukuran</label>
+          <select
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="cm">Sentimeter (cm)</option>
+            <option value="feet">Kaki (feet)</option>
+            <option value="inci">Inci (inch)</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Pilih unit untuk Lebar Tingkap dan Drop/Panjang.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block font-medium mb-1">
+              Lebar Tingkap / Rel ({unit === 'cm' ? 'cm' : unit === 'feet' ? 'ft' : 'in'}) *
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={width}
+              onChange={(e) => setWidth(e.target.value)}
+              required
+              placeholder={unit === 'cm' ? 'Contoh: 200' : unit === 'feet' ? 'Contoh: 6.5' : 'Contoh: 78'}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Lebar sebenar tingkap atau rel langsir dalam unit yang dipilih.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">
+              Drop / Panjang Langsir ({unit === 'cm' ? 'cm' : unit === 'feet' ? 'ft' : 'in'}) *
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={drop}
+              onChange={(e) => setDrop(e.target.value)}
+              required
+              placeholder={unit === 'cm' ? 'Contoh: 250' : unit === 'feet' ? 'Contoh: 8.2' : 'Contoh: 98'}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Ukuran dari atas rel hingga ke bawah langsir yang dikehendaki.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Fullness (Nisbah Kekemasan) *</label>
+            <input
+              type="number"
+              step="0.01"
+              value={fullness}
+              onChange={(e) => setFullness(e.target.value)}
+              required
+              placeholder="Contoh: 2.0"
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Berapa kali ganda lebar kain berbanding lebar tingkap. Nilai biasa: 1.5 – 2.5.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Lebar Kain (cm) *</label>
+            <input
+              type="number"
+              step="0.01"
+              value={fabricWidth}
+              onChange={(e) => setFabricWidth(e.target.value)}
+              required
+              placeholder="Contoh: 137"
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Lebar kain roll dalam cm. Kain biasa: 137 cm, 145 cm, 280 cm.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Pattern Repeat (cm)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={patternRepeat}
+              onChange={(e) => setPatternRepeat(e.target.value)}
+              placeholder="0 jika tiada corak"
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Jarak ulangan corak kain dalam cm. Jika tiada corak, biarkan 0.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Harga Kain per Meter (RM)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={pricePerMeter}
+              onChange={(e) => setPricePerMeter(e.target.value)}
+              placeholder="Contoh: 25.00"
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Untuk anggaran kos. Boleh dikosongkan.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Hem Allowance (cm)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={hemAllowance}
+              onChange={(e) => setHemAllowance(e.target.value)}
+              placeholder="Biasa 20"
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Lebihan kain untuk lipatan atas/bawah. Nilai biasa: 15–25 cm.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">Side Allowance (cm)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={sideAllowance}
+              onChange={(e) => setSideAllowance(e.target.value)}
+              placeholder="Biasa 10"
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Lebihan kain untuk lipatan sisi. Nilai biasa: 5–10 cm.
+            </p>
+          </div>
+        </div>
+
+        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded w-full sm:w-auto">
+          Kira
+        </button>
+      </form>
+
+      {error && <p className="text-red-500 mt-2">{error}</p>}
+
+      {result && (
+        <div className="mt-4 bg-blue-50 p-4 rounded border">
+          <h3 className="font-bold mb-2">Hasil Pengiraan</h3>
+          <p>Panel / Drop: <strong>{result.panels}</strong></p>
+          <p>Panjang setiap panel: <strong>{result.lengthPerPanelCm} cm</strong></p>
+          <p>Jumlah kain: <strong>{result.totalFabricMeter} meter</strong> ({result.totalFabricCm} cm)</p>
+          {pricePerMeter && (
+            <p>
+              Anggaran kos kain:{' '}
+              <strong>RM {(Number(pricePerMeter) * result.totalFabricMeter).toFixed(2)}</strong>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 export default App

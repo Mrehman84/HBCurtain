@@ -1,8 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { calculateFabric } from './lib/curtainCalculator'
-
-type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'calculator'
+type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'calculator'
 type AuthMode = 'login' | 'register'
 
 function App() {
@@ -103,13 +102,30 @@ function App() {
               Quotation
             </button>
             <button
+            onClick={() => setActivePage('salesorders')}
+            className={`px-3 py-1 rounded whitespace-nowrap ${
+              activePage === 'salesorders' ? 'bg-white text-blue-800' : 'text-white'
+            }`}
+          >
+            Sales Order
+          </button>
+            <button
               onClick={() => setActivePage('calculator')}
               className={`px-3 py-1 rounded whitespace-nowrap ${
                 activePage === 'calculator' ? 'bg-white text-blue-800' : 'text-white'
               }`}
+              
             >
               Kalkulator Kain
             </button>
+            <button
+          onClick={() => setActivePage('invoices')}
+          className={`px-3 py-1 rounded whitespace-nowrap ${
+            activePage === 'invoices' ? 'bg-white text-blue-800' : 'text-white'
+          }`}
+        >
+          Invoice
+        </button>
           </nav>
         </header>
 
@@ -128,6 +144,9 @@ function App() {
           {activePage === 'projects' && <ProjectsPage />}
           {activePage === 'quotations' && <QuotationPage />}
           {activePage === 'calculator' && <CalculatorPage />}
+          {activePage === 'salesorders' && <SalesOrderPage />}
+          {activePage === 'invoices' && <InvoicePage />}
+
         </main>
       </div>
     )
@@ -1882,4 +1901,921 @@ function CalculatorPage() {
   )
 }
 
+
+function SalesOrderPage() {
+  const [customers, setCustomers] = useState<any[]>([])
+  const [quotations, setQuotations] = useState<any[]>([])
+  const [salesOrders, setSalesOrders] = useState<any[]>([])
+  const [selectedSalesOrder, setSelectedSalesOrder] = useState<any | null>(null)
+  const [items, setItems] = useState<any[]>([])
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  // Form Sales Order
+  const [showSalesOrderForm, setShowSalesOrderForm] = useState(false)
+  const [customerId, setCustomerId] = useState('')
+  const [quotationId, setQuotationId] = useState('')
+  const [orderDate, setOrderDate] = useState('')
+  const [status, setStatus] = useState('pending')
+  const [editingSalesOrderId, setEditingSalesOrderId] = useState<string | null>(null)
+
+  // Item Form
+  const [showItemForm, setShowItemForm] = useState(false)
+  const [itemDescription, setItemDescription] = useState('')
+  const [itemQuantity, setItemQuantity] = useState('1')
+  const [itemUnit, setItemUnit] = useState('unit')
+  const [itemUnitPrice, setItemUnitPrice] = useState('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchCustomers()
+    fetchQuotations()
+    fetchSalesOrders()
+  }, [])
+
+  async function fetchCustomers() {
+    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
+    setCustomers(data || [])
+  }
+
+  async function fetchQuotations() {
+    const { data } = await supabase.from('quotations').select('id, quotation_number').order('created_at', { ascending: false })
+    setQuotations(data || [])
+  }
+
+  async function fetchSalesOrders() {
+    setLoading(true)
+    setMessage('')
+    try {
+      const { data, error } = await supabase
+        .from('sales_orders')
+        .select('*, customers(full_name)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setSalesOrders(data || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat sales order')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function fetchItems(salesOrderId: string) {
+    const { data, error } = await supabase
+      .from('sales_order_items')
+      .select('*')
+      .eq('sales_order_id', salesOrderId)
+      .order('created_at', { ascending: true })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setItems(data || [])
+  }
+
+  async function updateSalesOrderTotal(salesOrderId: string) {
+    const { data } = await supabase
+      .from('sales_order_items')
+      .select('line_total')
+      .eq('sales_order_id', salesOrderId)
+
+    const total = (data || []).reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+
+    await supabase.from('sales_orders').update({ total_amount: total }).eq('id', salesOrderId)
+    await fetchSalesOrders()
+  }
+
+  function resetSalesOrderForm() {
+    setEditingSalesOrderId(null)
+    setCustomerId('')
+    setQuotationId('')
+    setOrderDate('')
+    setStatus('pending')
+  }
+
+  function handleEditSalesOrder(so: any) {
+    setEditingSalesOrderId(so.id)
+    setCustomerId(so.customer_id || '')
+    setQuotationId(so.quotation_id || '')
+    setOrderDate(so.order_date || '')
+    setStatus(so.status || 'pending')
+    setShowSalesOrderForm(true)
+  }
+
+  async function handleSalesOrderSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!customerId) {
+      setMessage('Pilih pelanggan.')
+      return
+    }
+    try {
+      const payload = {
+        order_number: `SO-${Date.now()}`,
+        customer_id: customerId,
+        quotation_id: quotationId || null,
+        order_date: orderDate || null,
+        status,
+      }
+      let error: any = null
+      if (editingSalesOrderId) {
+        const res = await supabase.from('sales_orders').update(payload).eq('id', editingSalesOrderId)
+        error = res.error
+      } else {
+        const res = await supabase.from('sales_orders').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+      setShowSalesOrderForm(false)
+      resetSalesOrderForm()
+      await fetchSalesOrders()
+      setMessage('Sales order disimpan.')
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan sales order')
+    }
+  }
+
+  async function handleDeleteSalesOrder(id: string) {
+    if (!window.confirm('Padam sales order ini?')) return
+    try {
+      const { error } = await supabase.from('sales_orders').delete().eq('id', id)
+      if (error) throw error
+      if (selectedSalesOrder?.id === id) {
+        setSelectedSalesOrder(null)
+        setItems([])
+      }
+      await fetchSalesOrders()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam sales order')
+    }
+  }
+
+  function resetItemForm() {
+    setEditingItemId(null)
+    setItemDescription('')
+    setItemQuantity('1')
+    setItemUnit('unit')
+    setItemUnitPrice('')
+  }
+
+  function handleEditItem(item: any) {
+    setEditingItemId(item.id)
+    setItemDescription(item.description || '')
+    setItemQuantity(item.quantity?.toString() || '1')
+    setItemUnit(item.unit || 'unit')
+    setItemUnitPrice(item.unit_price?.toString() || '')
+    setShowItemForm(true)
+  }
+
+  async function handleItemSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!selectedSalesOrder || !itemDescription.trim()) return
+
+    const qty = Number(itemQuantity) || 1
+    const price = Number(itemUnitPrice) || 0
+    const lineTotal = qty * price
+
+    try {
+      const payload = {
+        sales_order_id: selectedSalesOrder.id,
+        description: itemDescription.trim(),
+        quantity: qty,
+        unit: itemUnit || null,
+        unit_price: price,
+        line_total: lineTotal,
+      }
+      let error: any = null
+      if (editingItemId) {
+        const res = await supabase.from('sales_order_items').update(payload).eq('id', editingItemId)
+        error = res.error
+      } else {
+        const res = await supabase.from('sales_order_items').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+
+      setShowItemForm(false)
+      resetItemForm()
+      await fetchItems(selectedSalesOrder.id)
+      await updateSalesOrderTotal(selectedSalesOrder.id)
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan item')
+    }
+  }
+
+  async function handleDeleteItem(id: string) {
+    if (!window.confirm('Padam item ini?')) return
+    try {
+      const { error } = await supabase.from('sales_order_items').delete().eq('id', id)
+      if (error) throw error
+      await fetchItems(selectedSalesOrder!.id)
+      await updateSalesOrderTotal(selectedSalesOrder!.id)
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam item')
+    }
+  }
+
+  const selectedSalesOrderTotal = selectedSalesOrder
+    ? items.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+    : 0
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Sales Order</h2>
+        <button
+          onClick={() => {
+            resetSalesOrderForm()
+            setShowSalesOrderForm(!showSalesOrderForm)
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          {showSalesOrderForm ? 'Tutup Borang' : '+ Tambah Sales Order'}
+        </button>
+      </div>
+
+      {showSalesOrderForm && (
+        <form onSubmit={handleSalesOrderSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">{editingSalesOrderId ? 'Edit Sales Order' : 'Tambah Sales Order Baru'}</h3>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            required
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="">Pilih Pelanggan *</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name}</option>
+            ))}
+          </select>
+          <select
+            value={quotationId}
+            onChange={(e) => setQuotationId(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="">Pilih Quotation (jika berkaitan)</option>
+            {quotations.map((q) => (
+              <option key={q.id} value={q.id}>{q.quotation_number}</option>
+            ))}
+          </select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              type="date"
+              value={orderDate}
+              onChange={(e) => setOrderDate(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-base"
+            >
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+            {editingSalesOrderId ? 'Simpan Perubahan' : 'Simpan Sales Order'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {loading ? (
+        <p>Memuatkan sales order...</p>
+      ) : salesOrders.length === 0 ? (
+        <p>Tiada sales order. Klik "+ Tambah Sales Order".</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Pelanggan</th>
+                <th className="text-left p-2 border">Tarikh</th>
+                <th className="text-left p-2 border">Status</th>
+                <th className="text-left p-2 border">Jumlah</th>
+                <th className="text-left p-2 border">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesOrders.map((so) => (
+                <tr key={so.id}>
+                  <td className="p-2 border font-medium">{so.order_number}</td>
+                  <td className="p-2 border">{so.customers?.full_name || '-'}</td>
+                  <td className="p-2 border">{so.order_date || '-'}</td>
+                  <td className="p-2 border">{so.status}</td>
+                  <td className="p-2 border">{so.total_amount ?? 0}</td>
+                  <td className="p-2 border whitespace-nowrap">
+                    <button
+                      onClick={() => {
+                        setSelectedSalesOrder(so)
+                        fetchItems(so.id)
+                      }}
+                      className="text-blue-600 underline mr-3"
+                    >
+                      Pilih
+                    </button>
+                    <button onClick={() => handleEditSalesOrder(so)} className="text-green-600 underline mr-3">
+                      Edit
+                    </button>
+                    <button onClick={() => handleDeleteSalesOrder(so.id)} className="text-red-600 underline">
+                      Padam
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Item section */}
+      {selectedSalesOrder && (
+        <div className="border-t pt-4 mt-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold">
+              Item untuk: {selectedSalesOrder.order_number}
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  resetItemForm()
+                  setShowItemForm(!showItemForm)
+                }}
+                className="bg-blue-600 text-white px-3 py-1 rounded"
+              >
+                {showItemForm ? 'Tutup' : '+ Tambah Item'}
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedSalesOrder(null)
+                  setItems([])
+                }}
+                className="bg-gray-500 text-white px-3 py-1 rounded"
+              >
+                Tutup Sales Order
+              </button>
+            </div>
+          </div>
+
+          {showItemForm && (
+            <form onSubmit={handleItemSubmit} className="bg-gray-50 p-4 rounded border mt-3 space-y-3">
+              <h4 className="font-bold">{editingItemId ? 'Edit Item' : 'Tambah Item'}</h4>
+              <input
+                type="text"
+                placeholder="Penerangan (cth: Jahit langsir S-Fold)"
+                value={itemDescription}
+                onChange={(e) => setItemDescription(e.target.value)}
+                required
+                className="w-full border rounded px-3 py-2 text-base"
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Qty"
+                  value={itemQuantity}
+                  onChange={(e) => setItemQuantity(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+                <input
+                  type="text"
+                  placeholder="Unit"
+                  value={itemUnit}
+                  onChange={(e) => setItemUnit(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Harga/Unit"
+                  value={itemUnitPrice}
+                  onChange={(e) => setItemUnitPrice(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+              </div>
+              <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+                {editingItemId ? 'Simpan Perubahan' : 'Simpan Item'}
+              </button>
+            </form>
+          )}
+
+          {items.length === 0 ? (
+            <p className="mt-3 text-gray-600">Tiada item. Tambah item untuk sales order ini.</p>
+          ) : (
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="text-left p-2 border">Penerangan</th>
+                    <th className="text-left p-2 border">Qty</th>
+                    <th className="text-left p-2 border">Unit</th>
+                    <th className="text-left p-2 border">Harga/Unit</th>
+                    <th className="text-left p-2 border">Jumlah</th>
+                    <th className="text-left p-2 border">Tindakan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="p-2 border">{item.description}</td>
+                      <td className="p-2 border">{item.quantity}</td>
+                      <td className="p-2 border">{item.unit || '-'}</td>
+                      <td className="p-2 border">{item.unit_price}</td>
+                      <td className="p-2 border">{item.line_total}</td>
+                      <td className="p-2 border whitespace-nowrap">
+                        <button onClick={() => handleEditItem(item)} className="text-green-600 underline mr-3">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDeleteItem(item.id)} className="text-red-600 underline">
+                          Padam
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-bold">
+                    <td colSpan={4} className="p-2 border text-right">Jumlah Keseluruhan</td>
+                    <td className="p-2 border">{selectedSalesOrderTotal.toFixed(2)}</td>
+                    <td className="p-2 border"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InvoicePage() {
+  const [customers, setCustomers] = useState<any[]>([])
+  const [salesOrders, setSalesOrders] = useState<any[]>([])
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null)
+  const [items, setItems] = useState<any[]>([])
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  // Form Invoice
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false)
+  const [customerId, setCustomerId] = useState('')
+  const [salesOrderId, setSalesOrderId] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [status, setStatus] = useState('draft')
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)
+
+  // Item Form
+  const [showItemForm, setShowItemForm] = useState(false)
+  const [itemDescription, setItemDescription] = useState('')
+  const [itemQuantity, setItemQuantity] = useState('1')
+  const [itemUnit, setItemUnit] = useState('unit')
+  const [itemUnitPrice, setItemUnitPrice] = useState('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchCustomers()
+    fetchSalesOrders()
+    fetchInvoices()
+  }, [])
+
+  async function fetchCustomers() {
+    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
+    setCustomers(data || [])
+  }
+
+  async function fetchSalesOrders() {
+    const { data } = await supabase.from('sales_orders').select('id, order_number').order('created_at', { ascending: false })
+    setSalesOrders(data || [])
+  }
+
+  async function fetchInvoices() {
+    setLoading(true)
+    setMessage('')
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*, customers(full_name)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setInvoices(data || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat invois')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function fetchItems(invoiceId: string) {
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .select('*')
+      .eq('invoice_id', invoiceId)
+      .order('created_at', { ascending: true })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setItems(data || [])
+  }
+
+  async function updateInvoiceTotal(invoiceId: string) {
+    const { data } = await supabase
+      .from('invoice_items')
+      .select('line_total')
+      .eq('invoice_id', invoiceId)
+
+    const total = (data || []).reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+
+    await supabase.from('invoices').update({ total_amount: total }).eq('id', invoiceId)
+    await fetchInvoices()
+  }
+
+  function resetInvoiceForm() {
+    setEditingInvoiceId(null)
+    setCustomerId('')
+    setSalesOrderId('')
+    setInvoiceDate('')
+    setDueDate('')
+    setStatus('draft')
+  }
+
+  function handleEditInvoice(inv: any) {
+    setEditingInvoiceId(inv.id)
+    setCustomerId(inv.customer_id || '')
+    setSalesOrderId(inv.sales_order_id || '')
+    setInvoiceDate(inv.invoice_date || '')
+    setDueDate(inv.due_date || '')
+    setStatus(inv.status || 'draft')
+    setShowInvoiceForm(true)
+  }
+
+  async function handleInvoiceSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!customerId) {
+      setMessage('Pilih pelanggan.')
+      return
+    }
+    try {
+      const payload = {
+        invoice_number: `INV-${Date.now()}`,
+        customer_id: customerId,
+        sales_order_id: salesOrderId || null,
+        invoice_date: invoiceDate || null,
+        due_date: dueDate || null,
+        status,
+      }
+      let error: any = null
+      if (editingInvoiceId) {
+        const res = await supabase.from('invoices').update(payload).eq('id', editingInvoiceId)
+        error = res.error
+      } else {
+        const res = await supabase.from('invoices').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+      setShowInvoiceForm(false)
+      resetInvoiceForm()
+      await fetchInvoices()
+      setMessage('Invois disimpan.')
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan invois')
+    }
+  }
+
+  async function handleDeleteInvoice(id: string) {
+    if (!window.confirm('Padam invois ini?')) return
+    try {
+      const { error } = await supabase.from('invoices').delete().eq('id', id)
+      if (error) throw error
+      if (selectedInvoice?.id === id) {
+        setSelectedInvoice(null)
+        setItems([])
+      }
+      await fetchInvoices()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam invois')
+    }
+  }
+
+  function resetItemForm() {
+    setEditingItemId(null)
+    setItemDescription('')
+    setItemQuantity('1')
+    setItemUnit('unit')
+    setItemUnitPrice('')
+  }
+
+  function handleEditItem(item: any) {
+    setEditingItemId(item.id)
+    setItemDescription(item.description || '')
+    setItemQuantity(item.quantity?.toString() || '1')
+    setItemUnit(item.unit || 'unit')
+    setItemUnitPrice(item.unit_price?.toString() || '')
+    setShowItemForm(true)
+  }
+
+  async function handleItemSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!selectedInvoice || !itemDescription.trim()) return
+
+    const qty = Number(itemQuantity) || 1
+    const price = Number(itemUnitPrice) || 0
+    const lineTotal = qty * price
+
+    try {
+      const payload = {
+        invoice_id: selectedInvoice.id,
+        description: itemDescription.trim(),
+        quantity: qty,
+        unit: itemUnit || null,
+        unit_price: price,
+        line_total: lineTotal,
+      }
+      let error: any = null
+      if (editingItemId) {
+        const res = await supabase.from('invoice_items').update(payload).eq('id', editingItemId)
+        error = res.error
+      } else {
+        const res = await supabase.from('invoice_items').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+
+      setShowItemForm(false)
+      resetItemForm()
+      await fetchItems(selectedInvoice.id)
+      await updateInvoiceTotal(selectedInvoice.id)
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan item')
+    }
+  }
+
+  async function handleDeleteItem(id: string) {
+    if (!window.confirm('Padam item ini?')) return
+    try {
+      const { error } = await supabase.from('invoice_items').delete().eq('id', id)
+      if (error) throw error
+      await fetchItems(selectedInvoice!.id)
+      await updateInvoiceTotal(selectedInvoice!.id)
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam item')
+    }
+  }
+
+  const selectedInvoiceTotal = selectedInvoice
+    ? items.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+    : 0
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Invoice</h2>
+        <button
+          onClick={() => {
+            resetInvoiceForm()
+            setShowInvoiceForm(!showInvoiceForm)
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          {showInvoiceForm ? 'Tutup Borang' : '+ Tambah Invoice'}
+        </button>
+      </div>
+
+      {showInvoiceForm && (
+        <form onSubmit={handleInvoiceSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">{editingInvoiceId ? 'Edit Invoice' : 'Tambah Invoice Baru'}</h3>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            required
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="">Pilih Pelanggan *</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name}</option>
+            ))}
+          </select>
+          <select
+            value={salesOrderId}
+            onChange={(e) => setSalesOrderId(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="">Pilih Sales Order (jika berkaitan)</option>
+            {salesOrders.map((so) => (
+              <option key={so.id} value={so.id}>{so.order_number}</option>
+            ))}
+          </select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+          </div>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="draft">Draft</option>
+            <option value="issued">Issued</option>
+            <option value="partially paid">Partially Paid</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+            <option value="void">Void</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+            {editingInvoiceId ? 'Simpan Perubahan' : 'Simpan Invoice'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {loading ? (
+        <p>Memuatkan invois...</p>
+      ) : invoices.length === 0 ? (
+        <p>Tiada invois. Klik "+ Tambah Invoice".</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Pelanggan</th>
+                <th className="text-left p-2 border">Tarikh</th>
+                <th className="text-left p-2 border">Due Date</th>
+                <th className="text-left p-2 border">Status</th>
+                <th className="text-left p-2 border">Jumlah</th>
+                <th className="text-left p-2 border">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <tr key={inv.id}>
+                  <td className="p-2 border font-medium">{inv.invoice_number}</td>
+                  <td className="p-2 border">{inv.customers?.full_name || '-'}</td>
+                  <td className="p-2 border">{inv.invoice_date || '-'}</td>
+                  <td className="p-2 border">{inv.due_date || '-'}</td>
+                  <td className="p-2 border">{inv.status}</td>
+                  <td className="p-2 border">{inv.total_amount ?? 0}</td>
+                  <td className="p-2 border whitespace-nowrap">
+                    <button
+                      onClick={() => {
+                        setSelectedInvoice(inv)
+                        fetchItems(inv.id)
+                      }}
+                      className="text-blue-600 underline mr-3"
+                    >
+                      Pilih
+                    </button>
+                    <button onClick={() => handleEditInvoice(inv)} className="text-green-600 underline mr-3">
+                      Edit
+                    </button>
+                    <button onClick={() => handleDeleteInvoice(inv.id)} className="text-red-600 underline">
+                      Padam
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Item section */}
+      {selectedInvoice && (
+        <div className="border-t pt-4 mt-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold">
+              Item untuk: {selectedInvoice.invoice_number}
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  resetItemForm()
+                  setShowItemForm(!showItemForm)
+                }}
+                className="bg-blue-600 text-white px-3 py-1 rounded"
+              >
+                {showItemForm ? 'Tutup' : '+ Tambah Item'}
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedInvoice(null)
+                  setItems([])
+                }}
+                className="bg-gray-500 text-white px-3 py-1 rounded"
+              >
+                Tutup Invoice
+              </button>
+            </div>
+          </div>
+
+          {showItemForm && (
+            <form onSubmit={handleItemSubmit} className="bg-gray-50 p-4 rounded border mt-3 space-y-3">
+              <h4 className="font-bold">{editingItemId ? 'Edit Item' : 'Tambah Item'}</h4>
+              <input
+                type="text"
+                placeholder="Penerangan (cth: Jahit langsir S-Fold)"
+                value={itemDescription}
+                onChange={(e) => setItemDescription(e.target.value)}
+                required
+                className="w-full border rounded px-3 py-2 text-base"
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Qty"
+                  value={itemQuantity}
+                  onChange={(e) => setItemQuantity(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+                <input
+                  type="text"
+                  placeholder="Unit"
+                  value={itemUnit}
+                  onChange={(e) => setItemUnit(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Harga/Unit"
+                  value={itemUnitPrice}
+                  onChange={(e) => setItemUnitPrice(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+              </div>
+              <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+                {editingItemId ? 'Simpan Perubahan' : 'Simpan Item'}
+              </button>
+            </form>
+          )}
+
+          {items.length === 0 ? (
+            <p className="mt-3 text-gray-600">Tiada item. Tambah item untuk invois ini.</p>
+          ) : (
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="text-left p-2 border">Penerangan</th>
+                    <th className="text-left p-2 border">Qty</th>
+                    <th className="text-left p-2 border">Unit</th>
+                    <th className="text-left p-2 border">Harga/Unit</th>
+                    <th className="text-left p-2 border">Jumlah</th>
+                    <th className="text-left p-2 border">Tindakan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="p-2 border">{item.description}</td>
+                      <td className="p-2 border">{item.quantity}</td>
+                      <td className="p-2 border">{item.unit || '-'}</td>
+                      <td className="p-2 border">{item.unit_price}</td>
+                      <td className="p-2 border">{item.line_total}</td>
+                      <td className="p-2 border whitespace-nowrap">
+                        <button onClick={() => handleEditItem(item)} className="text-green-600 underline mr-3">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDeleteItem(item.id)} className="text-red-600 underline">
+                          Padam
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-bold">
+                    <td colSpan={4} className="p-2 border text-right">Jumlah Keseluruhan</td>
+                    <td className="p-2 border">{selectedInvoiceTotal.toFixed(2)}</td>
+                    <td className="p-2 border"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 export default App

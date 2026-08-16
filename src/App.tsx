@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { calculateFabric } from './lib/curtainCalculator'
-type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'calculator'
+type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'calculator'
 type AuthMode = 'login' | 'register'
 
 function App() {
@@ -125,7 +125,24 @@ function App() {
           }`}
         >
           Invoice
+          
         </button>
+        <button
+  onClick={() => setActivePage('payments')}
+  className={`px-3 py-1 rounded whitespace-nowrap ${
+    activePage === 'payments' ? 'bg-white text-blue-800' : 'text-white'
+  }`}
+>
+  Bayaran
+      </button>
+      <button
+        onClick={() => setActivePage('reports')}
+        className={`px-3 py-1 rounded whitespace-nowrap ${
+          activePage === 'reports' ? 'bg-white text-blue-800' : 'text-white'
+        }`}
+      >
+        Laporan
+      </button>
           </nav>
         </header>
 
@@ -146,6 +163,8 @@ function App() {
           {activePage === 'calculator' && <CalculatorPage />}
           {activePage === 'salesorders' && <SalesOrderPage />}
           {activePage === 'invoices' && <InvoicePage />}
+          {activePage === 'payments' && <PaymentPage />}
+          {activePage === 'reports' && <ReportsPage />}
 
         </main>
       </div>
@@ -2813,6 +2832,313 @@ function InvoicePage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PaymentPage() {
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [payments, setPayments] = useState<any[]>([])
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState('')
+  const [amount, setAmount] = useState('')
+  const [paymentDate, setPaymentDate] = useState('')
+  const [method, setMethod] = useState('cash')
+  const [referenceNumber, setReferenceNumber] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchInvoices()
+    fetchPayments()
+  }, [])
+
+  async function fetchInvoices() {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*, customers(full_name)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setInvoices(data || [])
+  }
+
+  async function fetchPayments() {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('*, customers(full_name)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setPayments(data || [])
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!selectedInvoiceId || !amount) {
+      setMessage('Pilih invois dan masukkan jumlah.')
+      return
+    }
+
+    setSaving(true)
+    setMessage('')
+
+    const selectedInvoice = invoices.find((inv) => inv.id === selectedInvoiceId)
+    if (!selectedInvoice) {
+      setMessage('Invois tidak dijumpai.')
+      setSaving(false)
+      return
+    }
+
+    const paymentAmount = Number(amount)
+    if (paymentAmount <= 0) {
+      setMessage('Jumlah mesti lebih besar daripada 0.')
+      setSaving(false)
+      return
+    }
+
+    try {
+      // 1. Simpan payment
+      const { data: paymentData, error: paymentError } = await supabase
+        .from('payments')
+        .insert([
+          {
+            payment_number: `PAY-${Date.now()}`,
+            customer_id: selectedInvoice.customer_id,
+            invoice_id: selectedInvoice.id,
+            payment_date: paymentDate || null,
+            amount: paymentAmount,
+            method,
+            reference_number: referenceNumber || null,
+            status: 'confirmed',
+          },
+        ])
+        .select()
+        .single()
+
+      if (paymentError) throw paymentError
+
+      // 2. Simpan allocation
+      const { error: allocationError } = await supabase
+        .from('payment_allocations')
+        .insert([
+          {
+            payment_id: paymentData.id,
+            invoice_id: selectedInvoice.id,
+            amount: paymentAmount,
+          },
+        ])
+
+      if (allocationError) throw allocationError
+
+      // 3. Kemas kini paid_amount dan balance_due pada invoice
+      const newPaidAmount = Number(selectedInvoice.paid_amount || 0) + paymentAmount
+      const newBalanceDue = Number(selectedInvoice.total_amount || 0) - newPaidAmount
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({ paid_amount: newPaidAmount, balance_due: newBalanceDue })
+        .eq('id', selectedInvoice.id)
+
+      if (updateError) throw updateError
+
+      setSelectedInvoiceId('')
+      setAmount('')
+      setPaymentDate('')
+      setMethod('cash')
+      setReferenceNumber('')
+      await fetchInvoices()
+      await fetchPayments()
+      setMessage('Bayaran disimpan.')
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal menyimpan bayaran')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <h2 className="text-2xl font-bold">Bayaran & Hutang</h2>
+
+      <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+        <h3 className="font-bold">Rekod Bayaran</h3>
+        <select
+          value={selectedInvoiceId}
+          onChange={(e) => setSelectedInvoiceId(e.target.value)}
+          required
+          className="w-full border rounded px-3 py-2 text-base"
+        >
+          <option value="">Pilih Invois *</option>
+          {invoices.map((inv) => (
+            <option key={inv.id} value={inv.id}>
+              {inv.invoice_number} — {inv.customers?.full_name || '-'} (Baki: RM{(Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)).toFixed(2)})
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Jumlah Bayaran (RM) *"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          className="w-full border rounded px-3 py-2 text-base"
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            type="date"
+            value={paymentDate}
+            onChange={(e) => setPaymentDate(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          />
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="cash">Tunai</option>
+            <option value="bank">Bank Transfer</option>
+            <option value="ewallet">E-Wallet</option>
+            <option value="cheque">Cek</option>
+          </select>
+        </div>
+        <input
+          type="text"
+          placeholder="Nombor Rujukan (jika ada)"
+          value={referenceNumber}
+          onChange={(e) => setReferenceNumber(e.target.value)}
+          className="w-full border rounded px-3 py-2 text-base"
+        />
+        <button type="submit" disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded">
+          {saving ? 'Menyimpan...' : 'Simpan Bayaran'}
+        </button>
+      </form>
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      <h3 className="text-xl font-bold mt-4">Senarai Bayaran</h3>
+      {payments.length === 0 ? (
+        <p>Tiada bayaran direkod.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Pelanggan</th>
+                <th className="text-left p-2 border">Tarikh</th>
+                <th className="text-left p-2 border">Kaedah</th>
+                <th className="text-left p-2 border">Jumlah</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p) => (
+                <tr key={p.id}>
+                  <td className="p-2 border font-medium">{p.payment_number}</td>
+                  <td className="p-2 border">{p.customers?.full_name || '-'}</td>
+                  <td className="p-2 border">{p.payment_date || '-'}</td>
+                  <td className="p-2 border">{p.method}</td>
+                  <td className="p-2 border">RM{Number(p.amount).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReportsPage() {
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [payments, setPayments] = useState<any[]>([])
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
+    setMessage('')
+    try {
+      const { data: invData, error: invError } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, total_amount, paid_amount, balance_due, status')
+        .order('created_at', { ascending: false })
+
+      if (invError) throw invError
+
+      const { data: payData, error: payError } = await supabase
+        .from('payments')
+        .select('id, amount')
+        .order('created_at', { ascending: false })
+
+      if (payError) throw payError
+
+      setInvoices(invData || [])
+      setPayments(payData || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat laporan')
+    }
+  }
+
+  const totalInvoice = invoices.reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0)
+  const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  const totalOutstanding = invoices.reduce((sum, inv) => sum + Number(inv.balance_due || 0), 0)
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <h2 className="text-2xl font-bold">Laporan Kewangan Ringkas</h2>
+      {message && <p className="text-red-500">{message}</p>}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 p-4 rounded border">
+          <p className="text-gray-600">Jumlah Invois</p>
+          <p className="text-2xl font-bold">RM{totalInvoice.toFixed(2)}</p>
+        </div>
+        <div className="bg-green-50 p-4 rounded border">
+          <p className="text-gray-600">Jumlah Bayaran</p>
+          <p className="text-2xl font-bold">RM{totalPaid.toFixed(2)}</p>
+        </div>
+        <div className="bg-red-50 p-4 rounded border">
+          <p className="text-gray-600">Baki Hutang</p>
+          <p className="text-2xl font-bold">RM{totalOutstanding.toFixed(2)}</p>
+        </div>
+      </div>
+
+      <h3 className="text-xl font-bold mt-4">Senarai Invois</h3>
+      {invoices.length === 0 ? (
+        <p>Tiada invois.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Jumlah</th>
+                <th className="text-left p-2 border">Dibayar</th>
+                <th className="text-left p-2 border">Baki</th>
+                <th className="text-left p-2 border">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <tr key={inv.id}>
+                  <td className="p-2 border font-medium">{inv.invoice_number}</td>
+                  <td className="p-2 border">RM{Number(inv.total_amount || 0).toFixed(2)}</td>
+                  <td className="p-2 border">RM{Number(inv.paid_amount || 0).toFixed(2)}</td>
+                  <td className="p-2 border">RM{Number(inv.balance_due || 0).toFixed(2)}</td>
+                  <td className="p-2 border">{inv.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

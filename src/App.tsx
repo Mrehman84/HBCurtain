@@ -1,8 +1,44 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { calculateFabric } from './lib/curtainCalculator'
-type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'suppliers' | 'expenses' | 'inventory' | 'workshop' | 'installations' | 'calculator'
+type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' 
+| 'salesorders' | 'invoices' | 'payments' | 'reports' 
+| 'suppliers' | 'expenses' | 'inventory' | 'workshop' 
+| 'installations' | 'backup' | 'analytics' | 'calculator'
 type AuthMode = 'login' | 'register'
+
+function exportCSV(filename: string, rows: any[]) {
+  if (rows.length === 0) {
+    alert('Tiada data untuk dieksport.')
+    return
+  }
+  const headers = Object.keys(rows[0])
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) =>
+      headers.map((h) => {
+        const value = row[h] ?? ''
+        return `"${String(value).replace(/"/g, '""')}"`
+      }).join(',')
+    ),
+  ].join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+function exportJSON(filename: string, data: any) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
 
 import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
@@ -213,11 +249,27 @@ function App() {
       >
         Pemasangan
       </button>
+      <button
+  onClick={() => setActivePage('backup')}
+  className={`px-3 py-1 rounded whitespace-nowrap ${
+    activePage === 'backup' ? 'bg-white text-blue-800' : 'text-white'
+  }`}
+>
+  Backup
+</button>
+<button
+  onClick={() => setActivePage('analytics')}
+  className={`px-3 py-1 rounded whitespace-nowrap ${
+    activePage === 'analytics' ? 'bg-white text-blue-800' : 'text-white'
+  }`}
+>
+  Analisis
+</button>
           </nav>
         </header>
 
         <main className="max-w-5xl mx-auto p-4">
-          {activePage === 'dashboard' && (
+          {activePage === 'dashboard' && <DashboardPage />}
             <div className="bg-white p-4 sm:p-6 rounded shadow">
               <h2 className="text-2xl font-bold mb-2">Dashboard</h2>
               <p>Selamat datang ke HBCurtain ERP.</p>
@@ -240,6 +292,8 @@ function App() {
           {activePage === 'inventory' && <InventoryPage />}
           {activePage === 'workshop' && <WorkshopPage />}
           {activePage === 'installations' && <InstallationPage />}
+          {activePage === 'backup' && <BackupPage />}
+          {activePage === 'analytics' && <AnalyticsPage />}
 
         </main>
       </div>
@@ -4046,6 +4100,329 @@ function InstallationPage() {
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+function DashboardPage() {
+  const [customerCount, setCustomerCount] = useState(0)
+  const [projectCount, setProjectCount] = useState(0)
+  const [invoiceTotal, setInvoiceTotal] = useState(0)
+  const [outstandingTotal, setOutstandingTotal] = useState(0)
+  const [paymentTotal, setPaymentTotal] = useState(0)
+  const [expenseTotal, setExpenseTotal] = useState(0)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    fetchDashboard()
+  }, [])
+
+  async function fetchDashboard() {
+    setMessage('')
+    try {
+      const { count: custCount, error: custError } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true })
+      if (custError) throw custError
+
+      const { count: projCount, error: projError } = await supabase
+        .from('projects')
+        .select('*', { count: 'exact', head: true })
+      if (projError) throw projError
+
+      const { data: invData, error: invError } = await supabase
+        .from('invoices')
+        .select('total_amount, balance_due')
+      if (invError) throw invError
+
+      const { data: payData, error: payError } = await supabase
+        .from('payments')
+        .select('amount')
+      if (payError) throw payError
+
+      const { data: expData, error: expError } = await supabase
+        .from('expenses')
+        .select('amount')
+      if (expError) throw expError
+
+      setCustomerCount(custCount || 0)
+      setProjectCount(projCount || 0)
+      setInvoiceTotal((invData || []).reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0))
+      setOutstandingTotal((invData || []).reduce((sum, inv) => sum + Number(inv.balance_due || 0), 0))
+      setPaymentTotal((payData || []).reduce((sum, p) => sum + Number(p.amount || 0), 0))
+      setExpenseTotal((expData || []).reduce((sum, e) => sum + Number(e.amount || 0), 0))
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat dashboard')
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white p-4 sm:p-6 rounded shadow">
+        <h2 className="text-2xl font-bold mb-4">Dashboard</h2>
+        {message && <p className="text-red-500">{message}</p>}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 p-4 rounded border">
+            <p className="text-gray-600">Pelanggan</p>
+            <p className="text-2xl font-bold">{customerCount}</p>
+          </div>
+          <div className="bg-indigo-50 p-4 rounded border">
+            <p className="text-gray-600">Projek</p>
+            <p className="text-2xl font-bold">{projectCount}</p>
+          </div>
+          <div className="bg-purple-50 p-4 rounded border">
+            <p className="text-gray-600">Jumlah Invois</p>
+            <p className="text-2xl font-bold">RM{invoiceTotal.toFixed(2)}</p>
+          </div>
+          <div className="bg-green-50 p-4 rounded border">
+            <p className="text-gray-600">Jumlah Bayaran</p>
+            <p className="text-2xl font-bold">RM{paymentTotal.toFixed(2)}</p>
+          </div>
+          <div className="bg-red-50 p-4 rounded border">
+            <p className="text-gray-600">Baki Hutang</p>
+            <p className="text-2xl font-bold">RM{outstandingTotal.toFixed(2)}</p>
+          </div>
+          <div className="bg-yellow-50 p-4 rounded border">
+            <p className="text-gray-600">Jumlah Belanja</p>
+            <p className="text-2xl font-bold">RM{expenseTotal.toFixed(2)}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BackupPage() {
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState('')
+
+  async function handleExportCustomers() {
+    setLoading('customers')
+    setMessage('')
+    try {
+      const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false })
+      if (error) throw error
+      exportCSV('pelanggan.csv', data || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal eksport pelanggan')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  async function handleExportInvoices() {
+    setLoading('invoices')
+    setMessage('')
+    try {
+      const { data, error } = await supabase.from('invoices').select('*').order('created_at', { ascending: false })
+      if (error) throw error
+      exportCSV('invois.csv', data || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal eksport invois')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  async function handleExportPayments() {
+    setLoading('payments')
+    setMessage('')
+    try {
+      const { data, error } = await supabase.from('payments').select('*').order('created_at', { ascending: false })
+      if (error) throw error
+      exportCSV('bayaran.csv', data || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal eksport bayaran')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  async function handleExportAllJSON() {
+    setLoading('all')
+    setMessage('')
+    try {
+      const [custRes, invRes, payRes, expRes, supRes] = await Promise.all([
+        supabase.from('customers').select('*'),
+        supabase.from('invoices').select('*'),
+        supabase.from('payments').select('*'),
+        supabase.from('expenses').select('*'),
+        supabase.from('suppliers').select('*'),
+      ])
+      exportJSON('backup-semua-data.json', {
+        customers: custRes.data || [],
+        invoices: invRes.data || [],
+        payments: payRes.data || [],
+        expenses: expRes.data || [],
+        suppliers: supRes.data || [],
+        exported_at: new Date().toISOString(),
+      })
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal eksport semua data')
+    } finally {
+      setLoading('')
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <h2 className="text-2xl font-bold">Backup Data</h2>
+      <p className="text-gray-600">
+        Muat turun salinan data penting untuk disimpan di tempat selamat.
+      </p>
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          onClick={handleExportCustomers}
+          disabled={loading === 'customers'}
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {loading === 'customers' ? 'Mengeksport...' : 'Eksport Pelanggan (CSV)'}
+        </button>
+        <button
+          onClick={handleExportInvoices}
+          disabled={loading === 'invoices'}
+          className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {loading === 'invoices' ? 'Mengeksport...' : 'Eksport Invois (CSV)'}
+        </button>
+        <button
+          onClick={handleExportPayments}
+          disabled={loading === 'payments'}
+          className="bg-yellow-600 text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {loading === 'payments' ? 'Mengeksport...' : 'Eksport Bayaran (CSV)'}
+        </button>
+        <button
+          onClick={handleExportAllJSON}
+          disabled={loading === 'all'}
+          className="bg-gray-800 text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {loading === 'all' ? 'Mengeksport...' : 'Eksport Semua Data (JSON)'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AnalyticsPage() {
+  const [invoiceData, setInvoiceData] = useState<any[]>([])
+  const [expenseData, setExpenseData] = useState<any[]>([])
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
+    setMessage('')
+    try {
+      const { data: invData, error: invError } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, total_amount, paid_amount, balance_due, status, invoice_date')
+        .order('invoice_date', { ascending: false })
+      if (invError) throw invError
+
+      const { data: expData, error: expError } = await supabase
+        .from('expenses')
+        .select('id, expense_number, category, amount, expense_date')
+        .order('expense_date', { ascending: false })
+      if (expError) throw expError
+
+      setInvoiceData(invData || [])
+      setExpenseData(expData || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat analisis')
+    }
+  }
+
+  const totalRevenue = invoiceData.reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0)
+  const totalExpense = expenseData.reduce((sum, exp) => sum + Number(exp.amount || 0), 0)
+  const netProfit = totalRevenue - totalExpense
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <h2 className="text-2xl font-bold">Analisis Untung Rugi</h2>
+      {message && <p className="text-red-500">{message}</p>}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 p-4 rounded border">
+          <p className="text-gray-600">Jumlah Hasil (Invois)</p>
+          <p className="text-2xl font-bold">RM{totalRevenue.toFixed(2)}</p>
+        </div>
+        <div className="bg-red-50 p-4 rounded border">
+          <p className="text-gray-600">Jumlah Belanja</p>
+          <p className="text-2xl font-bold">RM{totalExpense.toFixed(2)}</p>
+        </div>
+        <div className={`p-4 rounded border ${netProfit >= 0 ? 'bg-green-50' : 'bg-red-100'}`}>
+          <p className="text-gray-600">Untung / Rugi Bersih</p>
+          <p className="text-2xl font-bold">RM{netProfit.toFixed(2)}</p>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-xl font-bold mb-2">Invois Terkini</h3>
+        {invoiceData.length === 0 ? (
+          <p>Tiada invois.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="text-left p-2 border">No.</th>
+                  <th className="text-left p-2 border">Tarikh</th>
+                  <th className="text-left p-2 border">Jumlah</th>
+                  <th className="text-left p-2 border">Baki</th>
+                  <th className="text-left p-2 border">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoiceData.map((inv) => (
+                  <tr key={inv.id}>
+                    <td className="p-2 border font-medium">{inv.invoice_number}</td>
+                    <td className="p-2 border">{inv.invoice_date || '-'}</td>
+                    <td className="p-2 border">RM{Number(inv.total_amount || 0).toFixed(2)}</td>
+                    <td className="p-2 border">RM{Number(inv.balance_due || 0).toFixed(2)}</td>
+                    <td className="p-2 border">{inv.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-xl font-bold mb-2">Belanja Terkini</h3>
+        {expenseData.length === 0 ? (
+          <p>Tiada belanja.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="text-left p-2 border">No.</th>
+                  <th className="text-left p-2 border">Tarikh</th>
+                  <th className="text-left p-2 border">Kategori</th>
+                  <th className="text-left p-2 border">Jumlah</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenseData.map((exp) => (
+                  <tr key={exp.id}>
+                    <td className="p-2 border font-medium">{exp.expense_number}</td>
+                    <td className="p-2 border">{exp.expense_date || '-'}</td>
+                    <td className="p-2 border">{exp.category}</td>
+                    <td className="p-2 border">RM{Number(exp.amount || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

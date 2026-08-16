@@ -149,8 +149,7 @@ function App() {
   )
 }
 
-import { useState, useEffect } from 'react'
-import { supabase } from './lib/supabaseClient'
+
 
 function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([])

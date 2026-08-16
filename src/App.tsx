@@ -154,6 +154,15 @@ function CustomersPage() {
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [customerMessage, setCustomerMessage] = useState('')
 
+  const [showForm, setShowForm] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [whatsapp, setWhatsapp] = useState('')
+  const [companyName, setCompanyName] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
   useEffect(() => {
     fetchCustomers()
   }, [])
@@ -176,12 +185,107 @@ function CustomersPage() {
     }
   }
 
+  async function handleAddCustomer(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setCustomerMessage('')
+    try {
+      const { error } = await supabase.from('customers').insert([
+        {
+          full_name: fullName,
+          phone: phone || null,
+          email: email || null,
+          whatsapp: whatsapp || null,
+          company_name: companyName || null,
+          notes: notes || null,
+        },
+      ])
+
+      if (error) throw error
+
+      setFullName('')
+      setPhone('')
+      setEmail('')
+      setWhatsapp('')
+      setCompanyName('')
+      setNotes('')
+      setShowForm(false)
+      await fetchCustomers()
+    } catch (err) {
+      setCustomerMessage(err.message || 'Gagal tambah pelanggan')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="bg-white p-6 rounded shadow">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">Senarai Pelanggan</h2>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded">+ Tambah</button>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          {showForm ? 'Tutup Borang' : '+ Tambah'}
+        </button>
       </div>
+
+      {showForm && (
+        <form onSubmit={handleAddCustomer} className="mb-6 bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">Tambah Pelanggan Baru</h3>
+          <input
+            type="text"
+            placeholder="Nama Penuh *"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+            className="w-full border rounded px-3 py-2"
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              type="text"
+              placeholder="Telefon"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full border rounded px-3 py-2"
+            />
+            <input
+              type="text"
+              placeholder="WhatsApp"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(e.target.value)}
+              className="w-full border rounded px-3 py-2"
+            />
+          </div>
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          />
+          <input
+            type="text"
+            placeholder="Nama Syarikat"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          />
+          <textarea
+            placeholder="Nota"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          />
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-green-600 text-white px-4 py-2 rounded"
+          >
+            {saving ? 'Menyimpan...' : 'Simpan Pelanggan'}
+          </button>
+        </form>
+      )}
 
       {customerMessage && <p className="text-red-500 mb-2">{customerMessage}</p>}
 

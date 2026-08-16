@@ -2,7 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { calculateFabric } from './lib/curtainCalculator'
 
-type Page = 'dashboard' | 'customers' | 'projects' | 'calculator'
+type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'calculator'
 type AuthMode = 'login' | 'register'
 
 function App() {
@@ -95,6 +95,14 @@ function App() {
               Projek
             </button>
             <button
+              onClick={() => setActivePage('quotations')}
+              className={`px-3 py-1 rounded whitespace-nowrap ${
+                activePage === 'quotations' ? 'bg-white text-blue-800' : 'text-white'
+              }`}
+            >
+              Quotation
+            </button>
+            <button
               onClick={() => setActivePage('calculator')}
               className={`px-3 py-1 rounded whitespace-nowrap ${
                 activePage === 'calculator' ? 'bg-white text-blue-800' : 'text-white'
@@ -118,6 +126,7 @@ function App() {
 
           {activePage === 'customers' && <CustomersPage />}
           {activePage === 'projects' && <ProjectsPage />}
+          {activePage === 'quotations' && <QuotationPage />}
           {activePage === 'calculator' && <CalculatorPage />}
         </main>
       </div>
@@ -1206,6 +1215,446 @@ function ProjectsPage() {
   )
 }
 
+function QuotationPage() {
+  const [customers, setCustomers] = useState<any[]>([])
+  const [quotations, setQuotations] = useState<any[]>([])
+  const [selectedQuotation, setSelectedQuotation] = useState<any | null>(null)
+  const [items, setItems] = useState<any[]>([])
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  // Quotation form
+  const [showQuotationForm, setShowQuotationForm] = useState(false)
+  const [customerId, setCustomerId] = useState('')
+  const [issueDate, setIssueDate] = useState('')
+  const [expiryDate, setExpiryDate] = useState('')
+  const [status, setStatus] = useState('draft')
+  const [editingQuotationId, setEditingQuotationId] = useState<string | null>(null)
+
+  // Item form
+  const [showItemForm, setShowItemForm] = useState(false)
+  const [itemDescription, setItemDescription] = useState('')
+  const [itemQuantity, setItemQuantity] = useState('1')
+  const [itemUnit, setItemUnit] = useState('unit')
+  const [itemUnitPrice, setItemUnitPrice] = useState('')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchCustomers()
+    fetchQuotations()
+  }, [])
+
+  async function fetchCustomers() {
+    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
+    setCustomers(data || [])
+  }
+
+  async function fetchQuotations() {
+    setLoading(true)
+    setMessage('')
+    try {
+      const { data, error } = await supabase
+        .from('quotations')
+        .select('*, customers(full_name)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setQuotations(data || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat quotation')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function fetchItems(quotationId: string) {
+    const { data, error } = await supabase
+      .from('quotation_items')
+      .select('*')
+      .eq('quotation_id', quotationId)
+      .order('created_at', { ascending: true })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setItems(data || [])
+  }
+
+  async function updateQuotationTotal(quotationId: string) {
+    const { data } = await supabase
+      .from('quotation_items')
+      .select('line_total')
+      .eq('quotation_id', quotationId)
+
+    const total = (data || []).reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+
+    await supabase.from('quotations').update({ total_amount: total }).eq('id', quotationId)
+    await fetchQuotations()
+  }
+
+  function resetQuotationForm() {
+    setEditingQuotationId(null)
+    setCustomerId('')
+    setIssueDate('')
+    setExpiryDate('')
+    setStatus('draft')
+  }
+
+  function handleEditQuotation(q: any) {
+    setEditingQuotationId(q.id)
+    setCustomerId(q.customer_id || '')
+    setIssueDate(q.issue_date || '')
+    setExpiryDate(q.expiry_date || '')
+    setStatus(q.status || 'draft')
+    setShowQuotationForm(true)
+  }
+
+  async function handleQuotationSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!customerId) {
+      setMessage('Pilih pelanggan.')
+      return
+    }
+    try {
+      const payload = {
+      quotation_number: `QT-${Date.now()}`,
+      customer_id: customerId,
+      issue_date: issueDate || null,
+      expiry_date: expiryDate || null,
+      status,
+    }
+      let error: any = null
+      if (editingQuotationId) {
+        const res = await supabase.from('quotations').update(payload).eq('id', editingQuotationId)
+        error = res.error
+      } else {
+        const res = await supabase.from('quotations').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+      setShowQuotationForm(false)
+      resetQuotationForm()
+      await fetchQuotations()
+      setMessage('Quotation disimpan.')
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan quotation')
+    }
+  }
+
+  async function handleDeleteQuotation(id: string) {
+    if (!window.confirm('Padam quotation ini?')) return
+    try {
+      const { error } = await supabase.from('quotations').delete().eq('id', id)
+      if (error) throw error
+      if (selectedQuotation?.id === id) {
+        setSelectedQuotation(null)
+        setItems([])
+      }
+      await fetchQuotations()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam quotation')
+    }
+  }
+
+  function resetItemForm() {
+    setEditingItemId(null)
+    setItemDescription('')
+    setItemQuantity('1')
+    setItemUnit('unit')
+    setItemUnitPrice('')
+  }
+
+  function handleEditItem(item: any) {
+    setEditingItemId(item.id)
+    setItemDescription(item.description || '')
+    setItemQuantity(item.quantity?.toString() || '1')
+    setItemUnit(item.unit || 'unit')
+    setItemUnitPrice(item.unit_price?.toString() || '')
+    setShowItemForm(true)
+  }
+
+  async function handleItemSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!selectedQuotation || !itemDescription.trim()) return
+
+    const qty = Number(itemQuantity) || 1
+    const price = Number(itemUnitPrice) || 0
+    const lineTotal = qty * price
+
+    try {
+      const payload = {
+        quotation_id: selectedQuotation.id,
+        description: itemDescription.trim(),
+        quantity: qty,
+        unit: itemUnit || null,
+        unit_price: price,
+        line_total: lineTotal,
+      }
+      let error: any = null
+      if (editingItemId) {
+        const res = await supabase.from('quotation_items').update(payload).eq('id', editingItemId)
+        error = res.error
+      } else {
+        const res = await supabase.from('quotation_items').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+
+      setShowItemForm(false)
+      resetItemForm()
+      await fetchItems(selectedQuotation.id)
+      await updateQuotationTotal(selectedQuotation.id)
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan item')
+    }
+  }
+
+  async function handleDeleteItem(id: string) {
+    if (!window.confirm('Padam item ini?')) return
+    try {
+      const { error } = await supabase.from('quotation_items').delete().eq('id', id)
+      if (error) throw error
+      await fetchItems(selectedQuotation!.id)
+      await updateQuotationTotal(selectedQuotation!.id)
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam item')
+    }
+  }
+
+  const selectedQuotationTotal = selectedQuotation
+    ? items.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
+    : 0
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Quotation</h2>
+        <button
+          onClick={() => {
+            resetQuotationForm()
+            setShowQuotationForm(!showQuotationForm)
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          {showQuotationForm ? 'Tutup Borang' : '+ Tambah Quotation'}
+        </button>
+      </div>
+
+      {showQuotationForm && (
+        <form onSubmit={handleQuotationSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">{editingQuotationId ? 'Edit Quotation' : 'Tambah Quotation Baru'}</h3>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            required
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="">Pilih Pelanggan *</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name}</option>
+            ))}
+          </select>
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="date"
+              value={issueDate}
+              onChange={(e) => setIssueDate(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-base"
+            />
+          </div>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="w-full border rounded px-3 py-2 text-base"
+          >
+            <option value="draft">Draft</option>
+            <option value="sent">Dihantar</option>
+            <option value="accepted">Diterima</option>
+            <option value="rejected">Ditolak</option>
+          </select>
+          <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+            {editingQuotationId ? 'Simpan Perubahan' : 'Simpan Quotation'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {loading ? (
+        <p>Memuatkan quotation...</p>
+      ) : quotations.length === 0 ? (
+        <p>Tiada quotation. Klik "+ Tambah Quotation".</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Pelanggan</th>
+                <th className="text-left p-2 border">Tarikh</th>
+                <th className="text-left p-2 border">Status</th>
+                <th className="text-left p-2 border">Jumlah</th>
+                <th className="text-left p-2 border">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotations.map((q) => (
+                <tr key={q.id}>
+                  <td className="p-2 border font-medium">{q.quotation_number}</td>
+                  <td className="p-2 border">{q.customers?.full_name || '-'}</td>
+                  <td className="p-2 border">{q.issue_date || '-'}</td>
+                  <td className="p-2 border">{q.status}</td>
+                  <td className="p-2 border">{q.total_amount ?? 0}</td>
+                  <td className="p-2 border whitespace-nowrap">
+                    <button
+                      onClick={() => {
+                        setSelectedQuotation(q)
+                        fetchItems(q.id)
+                      }}
+                      className="text-blue-600 underline mr-3"
+                    >
+                      Pilih
+                    </button>
+                    <button onClick={() => handleEditQuotation(q)} className="text-green-600 underline mr-3">
+                      Edit
+                    </button>
+                    <button onClick={() => handleDeleteQuotation(q.id)} className="text-red-600 underline">
+                      Padam
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Item section */}
+      {selectedQuotation && (
+        <div className="border-t pt-4 mt-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold">
+              Item untuk: {selectedQuotation.quotation_number}
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  resetItemForm()
+                  setShowItemForm(!showItemForm)
+                }}
+                className="bg-blue-600 text-white px-3 py-1 rounded"
+              >
+                {showItemForm ? 'Tutup' : '+ Tambah Item'}
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedQuotation(null)
+                  setItems([])
+                }}
+                className="bg-gray-500 text-white px-3 py-1 rounded"
+              >
+                Tutup Quotation
+              </button>
+            </div>
+          </div>
+
+          {showItemForm && (
+            <form onSubmit={handleItemSubmit} className="bg-gray-50 p-4 rounded border mt-3 space-y-3">
+              <h4 className="font-bold">{editingItemId ? 'Edit Item' : 'Tambah Item'}</h4>
+              <input
+                type="text"
+                placeholder="Penerangan (cth: Jahit langsir S-Fold)"
+                value={itemDescription}
+                onChange={(e) => setItemDescription(e.target.value)}
+                required
+                className="w-full border rounded px-3 py-2 text-base"
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Qty"
+                  value={itemQuantity}
+                  onChange={(e) => setItemQuantity(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+                <input
+                  type="text"
+                  placeholder="Unit"
+                  value={itemUnit}
+                  onChange={(e) => setItemUnit(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Harga/Unit"
+                  value={itemUnitPrice}
+                  onChange={(e) => setItemUnitPrice(e.target.value)}
+                  className="w-full border rounded px-3 py-2 text-base"
+                />
+              </div>
+              <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">
+                {editingItemId ? 'Simpan Perubahan' : 'Simpan Item'}
+              </button>
+            </form>
+          )}
+
+          {items.length === 0 ? (
+            <p className="mt-3 text-gray-600">Tiada item. Tambah item untuk quotation ini.</p>
+          ) : (
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="text-left p-2 border">Penerangan</th>
+                    <th className="text-left p-2 border">Qty</th>
+                    <th className="text-left p-2 border">Unit</th>
+                    <th className="text-left p-2 border">Harga/Unit</th>
+                    <th className="text-left p-2 border">Jumlah</th>
+                    <th className="text-left p-2 border">Tindakan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id}>
+                      <td className="p-2 border">{item.description}</td>
+                      <td className="p-2 border">{item.quantity}</td>
+                      <td className="p-2 border">{item.unit || '-'}</td>
+                      <td className="p-2 border">{item.unit_price}</td>
+                      <td className="p-2 border">{item.line_total}</td>
+                      <td className="p-2 border whitespace-nowrap">
+                        <button onClick={() => handleEditItem(item)} className="text-green-600 underline mr-3">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDeleteItem(item.id)} className="text-red-600 underline">
+                          Padam
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-100 font-bold">
+                    <td colSpan={4} className="p-2 border text-right">Jumlah Keseluruhan</td>
+                    <td className="p-2 border">{selectedQuotationTotal.toFixed(2)}</td>
+                    <td className="p-2 border"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CalculatorPage() {
   const [width, setWidth] = useState('')
   const [drop, setDrop] = useState('')
@@ -1222,7 +1671,7 @@ function CalculatorPage() {
   function convertToCm(value: number, unit: string): number {
     if (unit === 'feet') return value * 30.48
     if (unit === 'inci') return value * 2.54
-    return value // cm
+    return value
   }
 
   function handleCalculate(e: FormEvent) {
@@ -1262,7 +1711,6 @@ function CalculatorPage() {
       </p>
 
       <form onSubmit={handleCalculate} className="bg-gray-50 p-4 rounded border space-y-4">
-        {/* Pilihan unit */}
         <div>
           <label className="block font-medium mb-1">Unit Ukuran</label>
           <select
@@ -1433,6 +1881,5 @@ function CalculatorPage() {
     </div>
   )
 }
-
 
 export default App

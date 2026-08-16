@@ -4,6 +4,36 @@ import { calculateFabric } from './lib/curtainCalculator'
 type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'suppliers' | 'expenses' | 'inventory' | 'workshop' | 'installations' | 'calculator'
 type AuthMode = 'login' | 'register'
 
+import pdfMake from 'pdfmake/build/pdfmake'
+import pdfFonts from 'pdfmake/build/vfs_fonts'
+pdfMake.vfs = pdfFonts.vfs
+
+function sendWhatsApp(phone: string, message: string) {
+  const cleanPhone = phone.replace(/[^0-9]/g, '')
+  if (!cleanPhone) {
+    alert('Nombor telefon pelanggan tiada.')
+    return
+  }
+  const url = `https://wa.me/60${cleanPhone.startsWith('0') ? cleanPhone.slice(1) : cleanPhone}?text=${encodeURIComponent(message)}`
+  window.open(url, '_blank')
+}
+
+function generatePDF(title: string, content: any[]) {
+  const docDefinition: any = {
+    content: [
+      { text: 'HBCurtain ERP', style: 'header' },
+      { text: title, style: 'subheader' },
+      { text: new Date().toLocaleDateString(), margin: [0, 5, 0, 10] },
+      ...content,
+    ],
+    styles: {
+      header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
+      subheader: { fontSize: 14, bold: true, margin: [0, 0, 0, 10] },
+    },
+  }
+  pdfMake.createPdf(docDefinition).download(title + '.pdf')
+}
+
 function App() {
   const [session, setSession] = useState<any>(null)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
@@ -1327,9 +1357,22 @@ function QuotationPage() {
     fetchQuotations()
   }, [])
 
-  async function fetchCustomers() {
-    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
-    setCustomers(data || [])
+    async function fetchCustomers() {
+    setLoadingCustomers(true)
+    setCustomerMessage('')
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('full_name', { ascending: true })
+
+      if (error) throw error
+      setCustomers(data || [])
+    } catch (err: any) {
+      setCustomerMessage(err.message || 'Gagal memuat pelanggan')
+    } finally {
+      setLoadingCustomers(false)
+    }
   }
 
   async function fetchQuotations() {
@@ -1625,6 +1668,17 @@ function QuotationPage() {
               Item untuk: {selectedQuotation.quotation_number}
             </h3>
             <div className="flex gap-2">
+              <button
+   onClick={() => {
+   if (!selectedQuotation) return
+    const phone = customers.find((c) => c.id === selectedQuotation.customer_id)?.phone || ''
+    const message = `Salam ${selectedQuotation.customers?.full_name || 'pelanggan'},\n\nBerikut quotation anda:\n${selectedQuotation.quotation_number}\nJumlah: RM${selectedQuotationTotal.toFixed(2)}\n\nTerima kasih.`
+    sendWhatsApp(phone, message)
+  }}
+  className="bg-green-600 text-white px-3 py-1 rounded"
+>
+  Hantar WhatsApp
+</button>
               <button
                 onClick={() => {
                   resetItemForm()
@@ -2450,12 +2504,18 @@ function InvoicePage() {
   }, [])
 
   async function fetchCustomers() {
-    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
+    const { data } = await supabase
+      .from('customers')
+      .select('id, full_name, phone')
+      .order('full_name')
     setCustomers(data || [])
   }
 
   async function fetchSalesOrders() {
-    const { data } = await supabase.from('sales_orders').select('id, order_number').order('created_at', { ascending: false })
+    const { data } = await supabase
+      .from('sales_orders')
+      .select('id, order_number')
+      .order('created_at', { ascending: false })
     setSalesOrders(data || [])
   }
 
@@ -2465,7 +2525,7 @@ function InvoicePage() {
     try {
       const { data, error } = await supabase
         .from('invoices')
-        .select('*, customers(full_name)')
+        .select('*, customers(full_name, phone)')
         .order('created_at', { ascending: false })
       if (error) throw error
       setInvoices(data || [])
@@ -2637,6 +2697,10 @@ function InvoicePage() {
     ? items.reduce((sum, item) => sum + Number(item.line_total || 0), 0)
     : 0
 
+  const selectedInvoiceBalance = selectedInvoice
+    ? Number(selectedInvoice.total_amount || 0) - Number(selectedInvoice.paid_amount || 0)
+    : 0
+
   return (
     <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
       <div className="flex justify-between items-center">
@@ -2770,6 +2834,50 @@ function InvoicePage() {
               Item untuk: {selectedInvoice.invoice_number}
             </h3>
             <div className="flex gap-2">
+              {/* Butang WhatsApp */}
+              <button
+                onClick={() => {
+                  if (!selectedInvoice) return
+                  const phone = customers.find((c) => c.id === selectedInvoice.customer_id)?.phone || ''
+                  const message = `Salam ${selectedInvoice.customers?.full_name || 'pelanggan'},\n\nInvois ${selectedInvoice.invoice_number}\nJumlah: RM${selectedInvoiceTotal.toFixed(2)}\nBaki: RM${selectedInvoiceBalance.toFixed(2)}\n\nTerima kasih.`
+                  sendWhatsApp(phone, message)
+                }}
+                className="bg-green-600 text-white px-3 py-1 rounded"
+              >
+                Hantar WhatsApp
+              </button>
+
+              {/* Butang PDF */}
+              <button
+                onClick={() => {
+                  if (!selectedInvoice || items.length === 0) return
+                  const rows = items.map((item: any) => [
+                    item.description,
+                    item.quantity,
+                    item.unit || '-',
+                    `RM${Number(item.unit_price).toFixed(2)}`,
+                    `RM${Number(item.line_total).toFixed(2)}`,
+                  ])
+                  generatePDF(selectedInvoice.invoice_number, [
+                    {
+                      table: {
+                        headerRows: 1,
+                        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+                        body: [
+                          ['Penerangan', 'Qty', 'Unit', 'Harga', 'Jumlah'],
+                          ...rows,
+                          ['', '', '', 'Jumlah', `RM${selectedInvoiceTotal.toFixed(2)}`],
+                          ['', '', '', 'Baki', `RM${selectedInvoiceBalance.toFixed(2)}`],
+                        ],
+                      },
+                    },
+                  ])
+                }}
+                className="bg-red-600 text-white px-3 py-1 rounded"
+              >
+                PDF
+              </button>
+
               <button
                 onClick={() => {
                   resetItemForm()
@@ -2871,6 +2979,11 @@ function InvoicePage() {
                   <tr className="bg-gray-100 font-bold">
                     <td colSpan={4} className="p-2 border text-right">Jumlah Keseluruhan</td>
                     <td className="p-2 border">{selectedInvoiceTotal.toFixed(2)}</td>
+                    <td className="p-2 border"></td>
+                  </tr>
+                  <tr className="bg-gray-100 font-bold">
+                    <td colSpan={4} className="p-2 border text-right">Baki Belum Bayar</td>
+                    <td className="p-2 border">{selectedInvoiceBalance.toFixed(2)}</td>
                     <td className="p-2 border"></td>
                   </tr>
                 </tfoot>

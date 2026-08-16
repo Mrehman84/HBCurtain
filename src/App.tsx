@@ -149,12 +149,20 @@ function App() {
   )
 }
 
+import { useState, useEffect } from 'react'
+import { supabase } from './lib/supabaseClient'
+
 function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([])
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [customerMessage, setCustomerMessage] = useState('')
 
+  // Kontrol Antaramuka
   const [showForm, setShowForm] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+
+  // Negeri Borang (Form State)
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -162,6 +170,9 @@ function CustomersPage() {
   const [companyName, setCompanyName] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Negeri Carian (Search State)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     fetchCustomers()
@@ -178,145 +189,258 @@ function CustomersPage() {
 
       if (error) throw error
       setCustomers(data || [])
-    } catch (err) {
+    } catch (err: any) {
       setCustomerMessage(err.message || 'Gagal memuat pelanggan')
     } finally {
       setLoadingCustomers(false)
     }
   }
 
-  async function handleAddCustomer(e: React.FormEvent) {
+  // Menguruskan Tambah atau Kemaskini data
+  async function handleSaveCustomer(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     setCustomerMessage('')
+
+    const payload = {
+      full_name: fullName,
+      phone: phone || null,
+      email: email || null,
+      whatsapp: whatsapp || null,
+      company_name: companyName || null,
+      notes: notes || null,
+    }
+
     try {
-      const { error } = await supabase.from('customers').insert([
-        {
-          full_name: fullName,
-          phone: phone || null,
-          email: email || null,
-          whatsapp: whatsapp || null,
-          company_name: companyName || null,
-          notes: notes || null,
-        },
-      ])
+      if (editMode && selectedCustomerId) {
+        // Operasi KEMASKINI (UPDATE)
+        const { error } = await supabase
+          .from('customers')
+          .update(payload)
+          .eq('id', selectedCustomerId)
 
-      if (error) throw error
+        if (error) throw error
+      } else {
+        // Operasi TAMBAH BARU (INSERT)
+        const { error } = await supabase
+          .from('customers')
+          .insert([payload])
 
-      setFullName('')
-      setPhone('')
-      setEmail('')
-      setWhatsapp('')
-      setCompanyName('')
-      setNotes('')
-      setShowForm(false)
+        if (error) throw error
+      }
+
+      resetForm()
       await fetchCustomers()
-    } catch (err) {
-      setCustomerMessage(err.message || 'Gagal tambah pelanggan')
+    } catch (err: any) {
+      setCustomerMessage(err.message || 'Gagal menyimpan data pelanggan')
     } finally {
       setSaving(false)
     }
   }
 
+  // Memasukkan data ke dalam borang untuk diedit
+  function handleEditClick(customer: any) {
+    setEditMode(true)
+    setSelectedCustomerId(customer.id)
+    setFullName(customer.full_name)
+    setPhone(customer.phone || '')
+    setEmail(customer.email || '')
+    setWhatsapp(customer.whatsapp || '')
+    setCompanyName(customer.company_name || '')
+    setNotes(customer.notes || '')
+    setShowForm(true)
+  }
+
+  // Operasi PADAM (DELETE)
+  async function handleDeleteCustomer(id: string, name: string) {
+    const confirmDelete = window.confirm(`Adakah anda pasti mahu memadam pelanggan "${name}"?`)
+    if (!confirmDelete) return
+
+    setCustomerMessage('')
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+      await fetchCustomers()
+    } catch (err: any) {
+      setCustomerMessage(err.message || 'Gagal memadam pelanggan')
+    }
+  }
+
+  function resetForm() {
+    setFullName('')
+    setPhone('')
+    setEmail('')
+    setWhatsapp('')
+    setCompanyName('')
+    setNotes('')
+    setShowForm(false)
+    setEditMode(false)
+    setSelectedCustomerId(null)
+  }
+
+  // Fungsi Tapis data berdasarkan Input Carian
+  const filteredCustomers = customers.filter((c) => {
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      c.full_name?.toLowerCase().includes(searchLower) ||
+      c.phone?.includes(searchTerm) ||
+      c.company_name?.toLowerCase().includes(searchLower)
+    )
+  })
+
   return (
     <div className="bg-white p-6 rounded shadow">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Senarai Pelanggan</h2>
+      {/* Bahagian Atas */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">Senarai Pelanggan</h2>
+          <p className="text-sm text-gray-500">Urus profil dan maklumat perhubungan pelanggan anda.</p>
+        </div>
         <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          onClick={() => {
+            if (showForm) resetForm()
+            else setShowForm(true)
+          }}
+          className={`${showForm ? 'bg-gray-500' : 'bg-blue-600'} text-white px-4 py-2 rounded font-medium transition-colors`}
         >
-          {showForm ? 'Tutup Borang' : '+ Tambah'}
+          {showForm ? 'Tutup Borang' : '+ Tambah Pelanggan'}
         </button>
       </div>
 
+      {/* Borang Input (Tambah / Edit) */}
       {showForm && (
-        <form onSubmit={handleAddCustomer} className="mb-6 bg-gray-50 p-4 rounded border space-y-3">
-          <h3 className="font-bold">Tambah Pelanggan Baru</h3>
-          <input
-            type="text"
-            placeholder="Nama Penuh *"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-            className="w-full border rounded px-3 py-2"
-          />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input
-              type="text"
-              placeholder="Telefon"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-            />
-            <input
-              type="text"
-              placeholder="WhatsApp"
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              className="w-full border rounded px-3 py-2"
+        <form onSubmit={handleSaveCustomer} className="mb-6 bg-gray-50 p-5 rounded border border-gray-200 space-y-4 shadow-sm">
+          <h3 className="font-bold text-lg text-gray-700">
+            {editMode ? 'Kemaskini Maklumat Pelanggan' : 'Tambah Pelanggan Baru'}
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Nama Penuh *</label>
+              <input
+                type="text"
+                placeholder="cth: Ahmad Fauzi"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                className="w-full border border-gray-300 rounded px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Nama Syarikat (Opsional)</label>
+              <input
+                type="text"
+                placeholder="cth: HB Curtain Sdn Bhd"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">No. Telefon</label>
+              <input
+                type="text"
+                placeholder="cth: 0123456789"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">WhatsApp</label>
+              <input
+                type="text"
+                placeholder="cth: 0123456789"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Emel</label>
+              <input
+                type="email"
+                placeholder="cth: ahmad@gmail.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Nota / Alamat Kediaman</label>
+            <textarea
+              placeholder="Masukkan nota tambahan atau butiran alamat ukuran di sini..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-          />
-          <input
-            type="text"
-            placeholder="Nama Syarikat"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-          />
-          <textarea
-            placeholder="Nota"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-          />
-          <button
-            type="submit"
-            disabled={saving}
-            className="bg-green-600 text-white px-4 py-2 rounded"
-          >
-            {saving ? 'Menyimpan...' : 'Simpan Pelanggan'}
-          </button>
+
+          <div className="flex gap-2 justify-end">
+            {editMode && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded transition-colors"
+              >
+                Batal
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={saving}
+              className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-medium disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Menyimpan...' : editMode ? 'Kemaskini Pelanggan' : 'Simpan Pelanggan'}
+            </button>
+          </div>
         </form>
       )}
 
-      {customerMessage && <p className="text-red-500 mb-2">{customerMessage}</p>}
+      {/* Bar Carian */}
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="🔎 Cari nama, nombor telefon atau syarikat pelanggan..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full md:w-1/2 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
 
+      {customerMessage && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-4 rounded">
+          <p className="text-red-700 text-sm font-medium">{customerMessage}</p>
+        </div>
+      )}
+
+      {/* Jadual / Senarai Pelanggan */}
       {loadingCustomers ? (
-        <p>Memuatkan data...</p>
-      ) : customers.length === 0 ? (
-        <p>Tiada pelanggan lagi. Klik "+ Tambah" untuk menambah.</p>
+        <p className="text-gray-500 text-center py-4">Memuatkan data pelanggan...</p>
+            ) : filteredCustomers.length === 0 ? (
+        <div className="text-center py-8 border border-dashed rounded-lg bg-gray-50">
+          <p className="text-gray-500">
+            {searchTerm ? 'Tiada padanan carian dijumpai.' : 'Tiada rekod pelanggan disimpan lagi.'}
+          </p>
+        </div>
       ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="text-left p-2 border">Nama</th>
-              <th className="text-left p-2 border">Telefon</th>
-              <th className="text-left p-2 border">Email</th>
-              <th className="text-left p-2 border">WhatsApp</th>
-            </tr>
-          </thead>
-          <tbody>
-            {customers.map((c) => (
-              <tr key={c.id}>
-                <td className="p-2 border">{c.full_name}</td>
-                <td className="p-2 border">{c.phone || '-'}</td>
-                <td className="p-2 border">{c.email || '-'}</td>
-                <td className="p-2 border">{c.whatsapp || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          {/* Jadual pelanggan diletakkan di sini */}
+        </div>
       )}
     </div>
   )
 }
 
-export default App
+export default CustomersPage
+

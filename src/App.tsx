@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { calculateFabric } from './lib/curtainCalculator'
-type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'calculator'
+type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'suppliers' | 'expenses' | 'inventory' | 'workshop' | 'calculator'
 type AuthMode = 'login' | 'register'
 
 function App() {
@@ -142,6 +142,38 @@ function App() {
         }`}
       >
         Laporan
+            </button>
+            <button
+        onClick={() => setActivePage('suppliers')}
+        className={`px-3 py-1 rounded whitespace-nowrap ${
+          activePage === 'suppliers' ? 'bg-white text-blue-800' : 'text-white'
+        }`}
+      >
+        Supplier
+      </button>
+      <button
+        onClick={() => setActivePage('expenses')}
+        className={`px-3 py-1 rounded whitespace-nowrap ${
+          activePage === 'expenses' ? 'bg-white text-blue-800' : 'text-white'
+        }`}
+      >
+        Expense
+      </button>
+      <button
+        onClick={() => setActivePage('inventory')}
+        className={`px-3 py-1 rounded whitespace-nowrap ${
+          activePage === 'inventory' ? 'bg-white text-blue-800' : 'text-white'
+        }`}
+      >
+        Inventory
+      </button>
+      <button
+        onClick={() => setActivePage('workshop')}
+        className={`px-3 py-1 rounded whitespace-nowrap ${
+          activePage === 'workshop' ? 'bg-white text-blue-800' : 'text-white'
+        }`}
+      >
+        Workshop
       </button>
           </nav>
         </header>
@@ -165,6 +197,10 @@ function App() {
           {activePage === 'invoices' && <InvoicePage />}
           {activePage === 'payments' && <PaymentPage />}
           {activePage === 'reports' && <ReportsPage />}
+          {activePage === 'suppliers' && <SuppliersPage />}
+          {activePage === 'expenses' && <ExpensesPage />}
+          {activePage === 'inventory' && <InventoryPage />}
+          {activePage === 'workshop' && <WorkshopPage />}
 
         </main>
       </div>
@@ -3144,4 +3180,551 @@ function ReportsPage() {
     </div>
   )
 }
+
+function SuppliersPage() {
+  const [suppliers, setSuppliers] = useState<any[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [supplierName, setSupplierName] = useState('')
+  const [contactPerson, setContactPerson] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [notes, setNotes] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchSuppliers()
+  }, [])
+
+  async function fetchSuppliers() {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setSuppliers(data || [])
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setSupplierName('')
+    setContactPerson('')
+    setPhone('')
+    setEmail('')
+    setAddress('')
+    setNotes('')
+  }
+
+  function handleEdit(s: any) {
+    setEditingId(s.id)
+    setSupplierName(s.supplier_name || '')
+    setContactPerson(s.contact_person || '')
+    setPhone(s.phone || '')
+    setEmail(s.email || '')
+    setAddress(s.address || '')
+    setNotes(s.notes || '')
+    setShowForm(true)
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setMessage('')
+    if (!supplierName.trim()) {
+      setMessage('Nama supplier wajib diisi.')
+      setSaving(false)
+      return
+    }
+    try {
+      const payload = {
+        supplier_name: supplierName.trim(),
+        contact_person: contactPerson.trim() || null,
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+        address: address.trim() || null,
+        notes: notes.trim() || null,
+      }
+      let error: any = null
+      if (editingId) {
+        const res = await supabase.from('suppliers').update(payload).eq('id', editingId)
+        error = res.error
+      } else {
+        const res = await supabase.from('suppliers').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+      setShowForm(false)
+      resetForm()
+      await fetchSuppliers()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan supplier')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm('Padam supplier ini?')) return
+    try {
+      const { error } = await supabase.from('suppliers').delete().eq('id', id)
+      if (error) throw error
+      await fetchSuppliers()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam supplier')
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Supplier</h2>
+        <button
+          onClick={() => {
+            resetForm()
+            setShowForm(!showForm)
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          {showForm ? 'Tutup Borang' : '+ Tambah Supplier'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">{editingId ? 'Edit Supplier' : 'Tambah Supplier'}</h3>
+          <input type="text" placeholder="Nama Supplier *" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} required className="w-full border rounded px-3 py-2 text-base" />
+          <input type="text" placeholder="Nama Kontak" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <input type="text" placeholder="Telefon" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <textarea placeholder="Alamat" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <textarea placeholder="Nota" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <button type="submit" disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded">
+            {saving ? 'Menyimpan...' : editingId ? 'Simpan Perubahan' : 'Simpan Supplier'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {suppliers.length === 0 ? (
+        <p>Tiada supplier.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">Nama</th>
+                <th className="text-left p-2 border">Kontak</th>
+                <th className="text-left p-2 border">Telefon</th>
+                <th className="text-left p-2 border">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((s) => (
+                <tr key={s.id}>
+                  <td className="p-2 border font-medium">{s.supplier_name}</td>
+                  <td className="p-2 border">{s.contact_person || '-'}</td>
+                  <td className="p-2 border">{s.phone || '-'}</td>
+                  <td className="p-2 border whitespace-nowrap">
+                    <button onClick={() => handleEdit(s)} className="text-green-600 underline mr-3">Edit</button>
+                    <button onClick={() => handleDelete(s.id)} className="text-red-600 underline">Padam</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExpensesPage() {
+  const [expenses, setExpenses] = useState<any[]>([])
+  const [suppliers, setSuppliers] = useState<any[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [expenseDate, setExpenseDate] = useState('')
+  const [category, setCategory] = useState('Belanja Lain')
+  const [amount, setAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [referenceNumber, setReferenceNumber] = useState('')
+  const [supplierId, setSupplierId] = useState('')
+  const [notes, setNotes] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchExpenses()
+    fetchSuppliers()
+  }, [])
+
+  async function fetchExpenses() {
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('*, suppliers(supplier_name)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setExpenses(data || [])
+  }
+
+  async function fetchSuppliers() {
+    const { data } = await supabase.from('suppliers').select('id, supplier_name').order('supplier_name')
+    setSuppliers(data || [])
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setMessage('')
+    if (!amount || Number(amount) <= 0) {
+      setMessage('Jumlah mesti lebih besar daripada 0.')
+      setSaving(false)
+      return
+    }
+    try {
+      const payload = {
+        expense_number: `EXP-${Date.now()}`,
+        supplier_id: supplierId || null,
+        expense_date: expenseDate || null,
+        category,
+        amount: Number(amount),
+        payment_method: paymentMethod,
+        reference_number: referenceNumber || null,
+        notes: notes.trim() || null,
+      }
+      const { error } = await supabase.from('expenses').insert([payload])
+      if (error) throw error
+      setShowForm(false)
+      setExpenseDate('')
+      setCategory('Belanja Lain')
+      setAmount('')
+      setPaymentMethod('cash')
+      setReferenceNumber('')
+      setSupplierId('')
+      setNotes('')
+      await fetchExpenses()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan expense')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Expense</h2>
+        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded">
+          {showForm ? 'Tutup Borang' : '+ Tambah Expense'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">Tambah Expense</h3>
+          <input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full border rounded px-3 py-2 text-base">
+            <option value="Belanja Lain">Belanja Lain</option>
+            <option value="Sewa">Sewa</option>
+            <option value="Elektrik">Elektrik</option>
+            <option value="Air">Air</option>
+            <option value="Pengangkutan">Pengangkutan</option>
+            <option value="Pemasaran">Pemasaran</option>
+            <option value="Internet">Internet</option>
+            <option value="Upah Jahit">Upah Jahit</option>
+            <option value="Belian Kain">Belian Kain</option>
+          </select>
+          <input type="number" step="0.01" placeholder="Jumlah (RM) *" value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-full border rounded px-3 py-2 text-base" />
+          <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full border rounded px-3 py-2 text-base">
+            <option value="cash">Tunai</option>
+            <option value="bank">Bank Transfer</option>
+            <option value="ewallet">E-Wallet</option>
+            <option value="cheque">Cek</option>
+          </select>
+          <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="w-full border rounded px-3 py-2 text-base">
+            <option value="">Pilih Supplier (jika berkaitan)</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>{s.supplier_name}</option>
+            ))}
+          </select>
+          <input type="text" placeholder="Nombor Rujukan" value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <textarea placeholder="Nota" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <button type="submit" disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded">
+            {saving ? 'Menyimpan...' : 'Simpan Expense'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {expenses.length === 0 ? (
+        <p>Tiada expense direkod.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Tarikh</th>
+                <th className="text-left p-2 border">Kategori</th>
+                <th className="text-left p-2 border">Jumlah</th>
+                <th className="text-left p-2 border">Supplier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.map((e) => (
+                <tr key={e.id}>
+                  <td className="p-2 border font-medium">{e.expense_number}</td>
+                  <td className="p-2 border">{e.expense_date || '-'}</td>
+                  <td className="p-2 border">{e.category}</td>
+                  <td className="p-2 border">RM{Number(e.amount).toFixed(2)}</td>
+                  <td className="p-2 border">{e.suppliers?.supplier_name || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InventoryPage() {
+  const [fabricStock, setFabricStock] = useState<any[]>([])
+  const [productStock, setProductStock] = useState<any[]>([])
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
+    try {
+      const { data: fabricData, error: fabricError } = await supabase
+        .from('fabric_stock')
+        .select('*, fabrics(fabric_name)')
+        .order('created_at', { ascending: false })
+      if (fabricError) throw fabricError
+
+      const { data: productData, error: productError } = await supabase
+        .from('product_stock')
+        .select('*, products(product_name)')
+        .order('created_at', { ascending: false })
+      if (productError) throw productError
+
+      setFabricStock(fabricData || [])
+      setProductStock(productData || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat stok')
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <h2 className="text-2xl font-bold">Inventory</h2>
+      {message && <p className="text-red-500">{message}</p>}
+
+      <h3 className="text-xl font-bold">Stok Kain</h3>
+      {fabricStock.length === 0 ? (
+        <p>Tiada stok kain.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">Kain</th>
+                <th className="text-left p-2 border">Batch/No. Gulung</th>
+                <th className="text-left p-2 border">Baki Meter</th>
+                <th className="text-left p-2 border">Lokasi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fabricStock.map((f) => (
+                <tr key={f.id}>
+                  <td className="p-2 border">{f.fabrics?.fabric_name || '-'}</td>
+                  <td className="p-2 border">{f.roll_no || f.batch_code || '-'}</td>
+                  <td className="p-2 border">{f.remaining_meter}</td>
+                  <td className="p-2 border">{f.location || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h3 className="text-xl font-bold mt-4">Stok Produk</h3>
+      {productStock.length === 0 ? (
+        <p>Tiada stok produk.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">Produk</th>
+                <th className="text-left p-2 border">Batch</th>
+                <th className="text-left p-2 border">Baki Unit</th>
+                <th className="text-left p-2 border">Lokasi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productStock.map((p) => (
+                <tr key={p.id}>
+                  <td className="p-2 border">{p.products?.product_name || '-'}</td>
+                  <td className="p-2 border">{p.batch_code || '-'}</td>
+                  <td className="p-2 border">{p.remaining_quantity}</td>
+                  <td className="p-2 border">{p.location || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WorkshopPage() {
+  const [jobs, setJobs] = useState<any[]>([])
+  const [customers, setCustomers] = useState<any[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [customerId, setCustomerId] = useState('')
+  const [status, setStatus] = useState('pending')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [notes, setNotes] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchJobs()
+    fetchCustomers()
+  }, [])
+
+  async function fetchJobs() {
+    const { data, error } = await supabase
+      .from('workshop_jobs')
+      .select('*, customers(full_name)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setJobs(data || [])
+  }
+
+  async function fetchCustomers() {
+    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
+    setCustomers(data || [])
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setMessage('')
+    if (!customerId) {
+      setMessage('Pilih pelanggan.')
+      setSaving(false)
+      return
+    }
+    try {
+      const payload = {
+        job_number: `JOB-${Date.now()}`,
+        customer_id: customerId,
+        status,
+        assigned_to: assignedTo.trim() || null,
+        due_date: dueDate || null,
+        notes: notes.trim() || null,
+      }
+      const { error } = await supabase.from('workshop_jobs').insert([payload])
+      if (error) throw error
+      setShowForm(false)
+      setCustomerId('')
+      setStatus('pending')
+      setAssignedTo('')
+      setDueDate('')
+      setNotes('')
+      await fetchJobs()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan job')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Workshop</h2>
+        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded">
+          {showForm ? 'Tutup Borang' : '+ Tambah Job'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">Tambah Job Jahitan</h3>
+          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required className="w-full border rounded px-3 py-2 text-base">
+            <option value="">Pilih Pelanggan *</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name}</option>
+            ))}
+          </select>
+          <input type="text" placeholder="Tukang Jahit / Assigned To" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full border rounded px-3 py-2 text-base">
+            <option value="pending">Pending</option>
+            <option value="cutting">Potong</option>
+            <option value="sewing">Jahit</option>
+            <option value="qc">QC</option>
+            <option value="completed">Selesai</option>
+          </select>
+          <textarea placeholder="Nota" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <button type="submit" disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded">
+            {saving ? 'Menyimpan...' : 'Simpan Job'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {jobs.length === 0 ? (
+        <p>Tiada job workshop.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">No.</th>
+                <th className="text-left p-2 border">Pelanggan</th>
+                <th className="text-left p-2 border">Status</th>
+                <th className="text-left p-2 border">Tukang</th>
+                <th className="text-left p-2 border">Due Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id}>
+                  <td className="p-2 border font-medium">{j.job_number}</td>
+                  <td className="p-2 border">{j.customers?.full_name || '-'}</td>
+                  <td className="p-2 border">{j.status}</td>
+                  <td className="p-2 border">{j.assigned_to || '-'}</td>
+                  <td className="p-2 border">{j.due_date || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default App

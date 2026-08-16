@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { calculateFabric } from './lib/curtainCalculator'
-type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'suppliers' | 'expenses' | 'inventory' | 'workshop' | 'calculator'
+type Page = 'dashboard' | 'customers' | 'projects' | 'quotations' | 'salesorders' | 'invoices' | 'payments' | 'reports' | 'suppliers' | 'expenses' | 'inventory' | 'workshop' | 'installations' | 'calculator'
 type AuthMode = 'login' | 'register'
 
 function App() {
@@ -175,6 +175,14 @@ function App() {
       >
         Workshop
       </button>
+      <button
+        onClick={() => setActivePage('installations')}
+        className={`px-3 py-1 rounded whitespace-nowrap ${
+          activePage === 'installations' ? 'bg-white text-blue-800' : 'text-white'
+        }`}
+      >
+        Pemasangan
+      </button>
           </nav>
         </header>
 
@@ -201,6 +209,7 @@ function App() {
           {activePage === 'expenses' && <ExpensesPage />}
           {activePage === 'inventory' && <InventoryPage />}
           {activePage === 'workshop' && <WorkshopPage />}
+          {activePage === 'installations' && <InstallationPage />}
 
         </main>
       </div>
@@ -3727,4 +3736,204 @@ function WorkshopPage() {
   )
 }
 
+function InstallationPage() {
+  const [customers, setCustomers] = useState<any[]>([])
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [installations, setInstallations] = useState<any[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [customerId, setCustomerId] = useState('')
+  const [invoiceId, setInvoiceId] = useState('')
+  const [installationDate, setInstallationDate] = useState('')
+  const [address, setAddress] = useState('')
+  const [status, setStatus] = useState('pending')
+  const [installerName, setInstallerName] = useState('')
+  const [notes, setNotes] = useState('')
+  const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    fetchCustomers()
+    fetchInvoices()
+    fetchInstallations()
+  }, [])
+
+  async function fetchCustomers() {
+    const { data } = await supabase.from('customers').select('id, full_name').order('full_name')
+    setCustomers(data || [])
+  }
+
+  async function fetchInvoices() {
+    const { data } = await supabase.from('invoices').select('id, invoice_number').order('created_at', { ascending: false })
+    setInvoices(data || [])
+  }
+
+  async function fetchInstallations() {
+    const { data, error } = await supabase
+      .from('installations')
+      .select('*, customers(full_name)')
+      .order('created_at', { ascending: false })
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+    setInstallations(data || [])
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setCustomerId('')
+    setInvoiceId('')
+    setInstallationDate('')
+    setAddress('')
+    setStatus('pending')
+    setInstallerName('')
+    setNotes('')
+  }
+
+  function handleEdit(inst: any) {
+    setEditingId(inst.id)
+    setCustomerId(inst.customer_id || '')
+    setInvoiceId(inst.invoice_id || '')
+    setInstallationDate(inst.installation_date || '')
+    setAddress(inst.address || '')
+    setStatus(inst.status || 'pending')
+    setInstallerName(inst.installer_name || '')
+    setNotes(inst.notes || '')
+    setShowForm(true)
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setMessage('')
+    if (!customerId) {
+      setMessage('Pilih pelanggan.')
+      setSaving(false)
+      return
+    }
+    try {
+      const payload = {
+        customer_id: customerId,
+        invoice_id: invoiceId || null,
+        installation_date: installationDate || null,
+        address: address.trim() || null,
+        status,
+        installer_name: installerName.trim() || null,
+        notes: notes.trim() || null,
+      }
+      let error: any = null
+      if (editingId) {
+        const res = await supabase.from('installations').update(payload).eq('id', editingId)
+        error = res.error
+      } else {
+        const res = await supabase.from('installations').insert([payload])
+        error = res.error
+      }
+      if (error) throw error
+      setShowForm(false)
+      resetForm()
+      await fetchInstallations()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal simpan pemasangan')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm('Padam rekod pemasangan ini?')) return
+    try {
+      const { error } = await supabase.from('installations').delete().eq('id', id)
+      if (error) throw error
+      await fetchInstallations()
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal padam pemasangan')
+    }
+  }
+
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Pemasangan</h2>
+        <button
+          onClick={() => {
+            resetForm()
+            setShowForm(!showForm)
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          {showForm ? 'Tutup Borang' : '+ Tambah Pemasangan'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded border space-y-3">
+          <h3 className="font-bold">{editingId ? 'Edit Pemasangan' : 'Tambah Pemasangan'}</h3>
+          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} required className="w-full border rounded px-3 py-2 text-base">
+            <option value="">Pilih Pelanggan *</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name}</option>
+            ))}
+          </select>
+          <select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} className="w-full border rounded px-3 py-2 text-base">
+            <option value="">Pilih Invois (jika berkaitan)</option>
+            {invoices.map((inv) => (
+              <option key={inv.id} value={inv.id}>{inv.invoice_number}</option>
+            ))}
+          </select>
+          <input type="date" value={installationDate} onChange={(e) => setInstallationDate(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <input type="text" placeholder="Alamat Pemasangan" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full border rounded px-3 py-2 text-base">
+            <option value="pending">Pending</option>
+            <option value="scheduled">Dijadualkan</option>
+            <option value="completed">Selesai</option>
+            <option value="cancelled">Batal</option>
+          </select>
+          <input type="text" placeholder="Nama Pemasang" value={installerName} onChange={(e) => setInstallerName(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <textarea placeholder="Nota" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border rounded px-3 py-2 text-base" />
+          <button type="submit" disabled={saving} className="bg-green-600 text-white px-4 py-2 rounded">
+            {saving ? 'Menyimpan...' : editingId ? 'Simpan Perubahan' : 'Simpan Pemasangan'}
+          </button>
+        </form>
+      )}
+
+      {message && <p className="text-red-500">{message}</p>}
+
+      {installations.length === 0 ? (
+        <p>Tiada rekod pemasangan.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="text-left p-2 border">Pelanggan</th>
+                <th className="text-left p-2 border">Tarikh</th>
+                <th className="text-left p-2 border">Status</th>
+                <th className="text-left p-2 border">Pemasang</th>
+                <th className="text-left p-2 border">Alamat</th>
+                <th className="text-left p-2 border">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {installations.map((inst) => (
+                <tr key={inst.id}>
+                  <td className="p-2 border font-medium">{inst.customers?.full_name || '-'}</td>
+                  <td className="p-2 border">{inst.installation_date || '-'}</td>
+                  <td className="p-2 border">{inst.status}</td>
+                  <td className="p-2 border">{inst.installer_name || '-'}</td>
+                  <td className="p-2 border">{inst.address || '-'}</td>
+                  <td className="p-2 border whitespace-nowrap">
+                    <button onClick={() => handleEdit(inst)} className="text-green-600 underline mr-3">Edit</button>
+                    <button onClick={() => handleDelete(inst.id)} className="text-red-600 underline">Padam</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
 export default App

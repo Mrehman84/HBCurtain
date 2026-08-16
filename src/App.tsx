@@ -78,11 +78,18 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [activePage, setActivePage] = useState<Page>('dashboard')
+  const [portalToken, setPortalToken] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
     })
+useEffect(() => {
+  const hash = window.location.hash
+  if (hash.startsWith('#portal?token=')) {
+    setPortalToken(hash.replace('#portal?token=', ''))
+  }
+}, [])
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
@@ -117,6 +124,13 @@ function App() {
     await supabase.auth.signOut()
     setActivePage('dashboard')
   }
+
+  if (portalToken) {
+  return <PortalPage token={portalToken} onClose={() => {
+    setPortalToken(null)
+    window.location.hash = ''
+  }} />
+}
 
   if (session) {
     return (
@@ -270,15 +284,6 @@ function App() {
 
         <main className="max-w-5xl mx-auto p-4">
           {activePage === 'dashboard' && <DashboardPage />}
-            <div className="bg-white p-4 sm:p-6 rounded shadow">
-              <h2 className="text-2xl font-bold mb-2">Dashboard</h2>
-              <p>Selamat datang ke HBCurtain ERP.</p>
-              <p className="mt-2 text-gray-600">
-                Pilih menu di atas untuk mula mengurus perniagaan anda.
-              </p>
-            </div>
-          )}
-
           {activePage === 'customers' && <CustomersPage />}
           {activePage === 'projects' && <ProjectsPage />}
           {activePage === 'quotations' && <QuotationPage />}
@@ -446,6 +451,7 @@ function CustomersPage() {
     }
   }
 
+
   async function handleDelete(id: string) {
     if (!window.confirm('Padam pelanggan ini?')) return
     setCustomerMessage('')
@@ -457,7 +463,28 @@ function CustomersPage() {
       setCustomerMessage(err.message || 'Gagal padam pelanggan')
     }
   }
-
+async function generatePortalToken(customer: any) {
+  let token = customer.portal_token
+  if (!token) {
+    token = crypto.randomUUID()
+    const { error } = await supabase
+      .from('customers')
+      .update({ portal_token: token })
+      .eq('id', customer.id)
+    if (error) {
+      setCustomerMessage(error.message)
+      return
+    }
+  }
+  const link = `${window.location.origin}${window.location.pathname}#portal?token=${token}`
+  try {
+    await navigator.clipboard.writeText(link)
+    alert(`Link portal disalin!\n\n${link}`)
+  } catch {
+    prompt('Salin link portal:', link)
+  }
+  await fetchCustomers()
+}
   const filteredCustomers = customers.filter((c) =>
     `${c.full_name} ${c.phone || ''} ${c.address || ''} ${c.company_name || ''}`
       .toLowerCase()
@@ -559,6 +586,7 @@ function CustomersPage() {
                 <th className="text-left p-2 border">Telefon</th>
                 <th className="text-left p-2 border">Alamat</th>
                 <th className="text-left p-2 border">Syarikat</th>
+                <th className="text-left p-2 border">Portal</th>
                 <th className="text-left p-2 border">Tindakan</th>
               </tr>
             </thead>
@@ -569,6 +597,14 @@ function CustomersPage() {
                   <td className="p-2 border">{c.phone || '-'}</td>
                   <td className="p-2 border">{c.address || '-'}</td>
                   <td className="p-2 border">{c.company_name || '-'}</td>
+                  <td className="p-2 border whitespace-nowrap">
+                    <button
+                      onClick={() => generatePortalToken(c)}
+                      className="text-green-600 underline mr-3"
+                    >
+                      Buat Portal
+                    </button>
+                  </td>
                   <td className="p-2 border whitespace-nowrap">
                     <button
                       onClick={() => handleEdit(c)}
@@ -4422,6 +4458,166 @@ function AnalyticsPage() {
             </table>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function PortalPage({ token, onClose }: { token: string; onClose: () => void }) {
+  const [customer, setCustomer] = useState<any | null>(null)
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [payments, setPayments] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    fetchPortalData()
+  }, [])
+
+  async function fetchPortalData() {
+    setLoading(true)
+    setMessage('')
+    try {
+      const { data: custData, error: custError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('portal_token', token)
+        .single()
+
+      if (custError) throw new Error('Pautan tidak sah atau telah tamat.')
+      setCustomer(custData)
+
+      const { data: invData, error: invError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('customer_id', custData.id)
+        .order('created_at', { ascending: false })
+
+      if (invError) throw invError
+      setInvoices(invData || [])
+
+      const { data: payData, error: payError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('customer_id', custData.id)
+        .order('created_at', { ascending: false })
+
+      if (payError) throw payError
+      setPayments(payData || [])
+    } catch (err: any) {
+      setMessage(err.message || 'Gagal memuat portal')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const totalOutstanding = invoices.reduce((sum, inv) => sum + Number(inv.balance_due || 0), 0)
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+        <p>Memuatkan portal...</p>
+      </div>
+    )
+  }
+
+  if (message) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+        <p className="text-red-500 mb-4">{message}</p>
+        <button onClick={onClose} className="bg-blue-600 text-white px-4 py-2 rounded">
+          Tutup
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4">
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-white p-4 sm:p-6 rounded shadow space-y-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold">Portal Pelanggan</h1>
+            <button onClick={onClose} className="bg-gray-500 text-white px-3 py-1 rounded">
+              Tutup
+            </button>
+          </div>
+
+          <div className="bg-blue-50 p-4 rounded border">
+            <h2 className="text-xl font-bold">{customer.full_name}</h2>
+            <p className="text-gray-600">{customer.phone || ''}</p>
+            <p className="text-gray-600">{customer.address || ''}</p>
+          </div>
+
+          <div className="bg-red-50 p-4 rounded border">
+            <p className="text-gray-600">Jumlah Baki Hutang</p>
+            <p className="text-3xl font-bold">RM{totalOutstanding.toFixed(2)}</p>
+          </div>
+
+          <div>
+            <h3 className="text-xl font-bold mb-2">Invois</h3>
+            {invoices.length === 0 ? (
+              <p>Tiada invois.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="text-left p-2 border">No.</th>
+                      <th className="text-left p-2 border">Tarikh</th>
+                      <th className="text-left p-2 border">Jumlah</th>
+                      <th className="text-left p-2 border">Dibayar</th>
+                      <th className="text-left p-2 border">Baki</th>
+                      <th className="text-left p-2 border">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.map((inv) => (
+                      <tr key={inv.id}>
+                        <td className="p-2 border font-medium">{inv.invoice_number}</td>
+                        <td className="p-2 border">{inv.invoice_date || '-'}</td>
+                        <td className="p-2 border">RM{Number(inv.total_amount || 0).toFixed(2)}</td>
+                        <td className="p-2 border">RM{Number(inv.paid_amount || 0).toFixed(2)}</td>
+                        <td className="p-2 border">RM{Number(inv.balance_due || 0).toFixed(2)}</td>
+                        <td className="p-2 border">{inv.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-xl font-bold mb-2">Bayaran</h3>
+            {payments.length === 0 ? (
+              <p>Tiada bayaran direkod.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="text-left p-2 border">No.</th>
+                      <th className="text-left p-2 border">Tarikh</th>
+                      <th className="text-left p-2 border">Kaedah</th>
+                      <th className="text-left p-2 border">Jumlah</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map((p) => (
+                      <tr key={p.id}>
+                        <td className="p-2 border font-medium">{p.payment_number}</td>
+                        <td className="p-2 border">{p.payment_date || '-'}</td>
+                        <td className="p-2 border">{p.method}</td>
+                        <td className="p-2 border">RM{Number(p.amount || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
